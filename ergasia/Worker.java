@@ -144,8 +144,8 @@ class WorkerHandler implements Runnable{
             case "EDIT_GAME" -> editGame(p);
             case "SEARCH" -> search(p);
             case "PLAY" -> play(p);
-            case "MAP_STATS_PROVIDER" -> mapStatsProvider(p);
-            case "MAP_STATS_PLAYER" -> mapStatsPlayer(p);
+            case "MAP_STATS_PROVIDER" -> mapAndSendToReducer(p,"PROVIDER");
+            case "MAP_STATS_PLAYER" -> mapAndSendToReducer(p, "PLAYER");
             default -> "ERROR|Unknown command";
         };
     }
@@ -241,26 +241,61 @@ class WorkerHandler implements Runnable{
 
     } 
 
-    private String mapStatsProvider(String[] m) {
-        String providerName = m.length > 1 ? m[1] : "";
+    private String mapAndSendToReducer(String[] p, String type) {
+        if (p.length < 5) return "ERROR|Missing params for MAP";
+ 
+        String jobId       = p[1];
+        String queryParam  = p[2]; // providerName ή playerId
+        String reducerHost = p[3];
+        int    reducerPort = (int) safeDouble(p[4]);
+ 
+        // Υπολογισμός map result
+        String mapResult = type.equals("PROVIDER")
+                ? computeProviderMap(queryParam)
+                : computePlayerMap(queryParam);
+ 
+        // Αποστολή αποτελέσματος ΑΠΕΥΘΕΙΑΣ στον Reducer
+        sendToReducer(reducerHost, reducerPort, jobId, mapResult);
+ 
+        // Επιστροφή acknowledgment στον Master
+        return "OK|Map result sent to reducer for job " + jobId;
+    }
+ 
+    // MAP για provider: συγκεντρώνει house P&L ανά game για έναν provider
+    private String computeProviderMap(String providerName) {
         StringBuilder sb = new StringBuilder();
-
         synchronized (Worker.games) {
             for (Map.Entry<String, GameInfo> e : Worker.games.entrySet()) {
                 if (e.getValue().providerName.equals(providerName)) {
                     double stat = Worker.gameStats.getOrDefault(e.getKey(), 0.0);
-                    sb.append(e.getKey()).append("=").append(stat).append(","); 
+                    sb.append(e.getKey()).append("=").append(stat).append(",");
                 }
             }
         }
         return sb.length() > 0 ? sb.toString() : "EMPTY";
     }
-
-    private String mapStatsPlayer(String[] m){
-        String playerId = m.length > 0 ? m[1]: "";
+ 
+    // MAP για player: επιστρέφει το P&L του παίκτη από αυτόν τον Worker
+    private String computePlayerMap(String playerId) {
         synchronized (Worker.playerStats) {
-            double total = Worker.playerStats.getOrDefault(playerId,0.0);
-            return playerId + "=" + total;
+            double total = Worker.playerStats.getOrDefault(playerId, 0.0);
+            return total != 0.0 ? playerId + "=" + total : "EMPTY";
+        }
+    }
+ 
+    // TCP αποστολή MAP_RESULT απευθείας στον Reducer
+    private void sendToReducer(String host, int port, String jobId, String mapResult) {
+        try (Socket reducerSocket = new Socket(host, port);
+             PrintWriter out = new PrintWriter(reducerSocket.getOutputStream(), true);
+             BufferedReader in = new BufferedReader(
+                     new InputStreamReader(reducerSocket.getInputStream()))) {
+ 
+            out.println("MAP_RESULT|" + jobId + "|" + mapResult);
+            String ack = in.readLine();
+            System.out.println("[Worker] Reducer ack for job " + jobId + ": " + ack);
+ 
+        } catch (IOException e) {
+            System.err.println("[Worker] Failed to send map result to Reducer: " + e.getMessage());
         }
     }
 
