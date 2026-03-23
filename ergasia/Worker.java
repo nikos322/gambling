@@ -183,7 +183,7 @@ class WorkerHandler implements Runnable{
 
         synchronized (Worker.games) {
             GameInfo g = Worker.games.get(name);
-            //TODO : switch fo changes
+            //TODO : switch for changes
         }
         return "OK|Game edited: "+ name;
     }
@@ -247,7 +247,7 @@ class WorkerHandler implements Runnable{
         String jobId       = p[1];
         String queryParam  = p[2]; // providerName ή playerId
         String reducerHost = p[3];
-        int    reducerPort = (int) safeDouble(p[4]);
+        int    reducerPort = Integer.parseInt(p[4]);
  
         // Υπολογισμός map result
         String mapResult = type.equals("PROVIDER")
