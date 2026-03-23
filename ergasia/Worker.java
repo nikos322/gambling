@@ -2,6 +2,7 @@ import java.io.*;
 import java.net.*;
 import java.security.MessageDigest;
 import java.util.*;
+import jdk.jshell.spi.ExecutionControl;
 
 public class Worker {
     private static final int DEFAULT_PORT = 5001;
@@ -228,7 +229,7 @@ class WorkerHandler implements Runnable{
 
         double houseWinnings = betAmount - payout;
         synchronized (Worker.gameStats) {
-            Worker.gameStats.merge(gameName, payout, Double::sum);
+            Worker.gameStats.merge(gameName, houseWinnings, Double::sum);
         }
         synchronized (Worker.playerStats) {
             Worker.playerStats.merge(playerId, payout - betAmount, Double::sum);
@@ -238,5 +239,81 @@ class WorkerHandler implements Runnable{
                 playerId, gameName, betAmount, payout);
         return String.format("PAYOUT|%.2f", payout);
 
+    } 
+
+    private String mapStatsProvider(String[] m) {
+        String providerName = m.length > 1 ? m[1] : "";
+        StringBuilder sb = new StringBuilder();
+
+        synchronized (Worker.games) {
+            for (Map.Entry<String, GameInfo> e : Worker.games.entrySet()) {
+                if (e.getValue().providerName.equals(providerName)) {
+                    double stat = Worker.gameStats.getOrDefault(e.getKey(), 0.0);
+                    sb.append(e.getKey()).append("=").append(stat).append(","); 
+                }
+            }
+        }
+        return sb.length() > 0 ? sb.toString() : "EMPTY";
     }
-} 
+
+    private String mapStatsPlayer(String[] m){
+        String playerId = m.length > 0 ? m[1]: "";
+        synchronized (Worker.playerStats) {
+            double total = Worker.playerStats.getOrDefault(playerId,0.0);
+            return playerId + "=" + total;
+        }
+    }
+
+    private int getSecureRandom(String gameName, String secret){
+        try(Socket srgSocket = new Socket(srgHost,srgPort);
+            BufferedReader srgIn = new BufferedReader(new InputStreamReader(srgSocket.getInputStream()));
+            PrintWriter srgOut = new PrintWriter(srgSocket.getOutputStream(),true)) 
+            {
+                srgOut.println("GET_RANDOM|"+ gameName);
+                String response = srgIn.readLine();
+
+                if (response == null) return -1;
+                String[] parts = response.split("\\|");
+                if (parts.length < 2) return -1;
+
+                int number = Integer.parseInt(parts[0]);
+                String hash = parts[1];
+
+                String myHash = sha256(number + secret);
+                if (!myHash.equals(hash)) {
+                    System.err.println("[Worker] SRG hash mismatch");
+                    return -1;
+                }
+                return number;
+                
+            } catch (Exception exception){
+                System.err.println("[Worker] Srg error: "+ exception.getMessage());
+                return -1;
+            }
+    }
+
+    private double calculatePayout(int randomNum, double bet, GameInfo game){
+        int mod100 = randomNum % 100;
+        if (mod100 == 0) {
+            System.out.println("[Worker] Jackpot!!!!");
+            return bet * game.jackpot;
+        }
+
+        int idx = randomNum % 10;
+        double multiplier = game.getMultipliers()[idx];
+        return bet * multiplier;
+    }
+
+    private String sha256(String input){
+        try {
+            MessageDigest md = MessageDigest.getInstance("SHA-256");
+            byte[] hash = md.digest(input.getBytes("UTF-8"));
+            StringBuilder sb = new StringBuilder();
+            for (byte b : hash) sb.append(String.format("%02x", b));
+            return sb.toString();
+        } catch (Exception e) {
+            throw new RuntimeException("SHA-256 failed", e);
+        }
+    }
+
+}  
