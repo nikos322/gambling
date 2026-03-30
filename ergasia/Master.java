@@ -1,88 +1,116 @@
-import java.io.*;
-import java.net.*;
-import java.util.*;
+import java.io.BufferedReader;
+import java.io.IOException;
+import java.io.InputStreamReader;
+import java.io.PrintWriter;
+import java.net.ServerSocket;
+import java.net.Socket;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Collections;
+import java.util.List;
 
 public class Master {
 
     private static final int MASTER_PORT = 5000;
-    private static int numOfWorkers;
-    private static List<WorkerConnection> workerConnections = new ArrayList<>();
+
+    private static final List<WorkerConnection> workerConnections = new ArrayList<>();
     private static ReducerConnection reducerConnection;
 
     private static String reducerHost;
     private static int reducerPort;
-
-    public static void main(String[] args) throws IOException{
-        
-        if (args.length == 0) {
-            System.out.println("Usage: Master <reducerHost:port> <worker1:port> <worker2:port> ...");
+    private static int numOfWorkers;
+    //TODO after init import all games from json / make json 
+    public static void main(String[] args) throws IOException {
+        if (args.length < 2) {
+            System.out.println("Usage: java Master <reducerHost:port> <worker1:port> <worker2:port> ...");
             return;
         }
+
         String[] reducerAddr = args[0].split(":");
+        if (reducerAddr.length != 2) {
+            System.out.println("ERROR: Invalid reducer address. Expected host:port");
+            return;
+        }
+
         reducerHost = reducerAddr[0];
         reducerPort = Integer.parseInt(reducerAddr[1]);
-        reducerConnection = new ReducerConnection(reducerHost,reducerPort);
+
+        reducerConnection = new ReducerConnection(reducerHost, reducerPort);
         reducerConnection.connect();
-        numOfWorkers = args.length;
-        initWorkerConnections(args);
+
+        initWorkerConnections(Arrays.copyOfRange(args, 1, args.length));
+        numOfWorkers = workerConnections.size();
+
+        if (numOfWorkers == 0) {
+            System.out.println("[Master] No workers configured.");
+            return;
+        }
 
         ServerSocket serverSocket = new ServerSocket(MASTER_PORT);
         System.out.println("[Master] Listening on port " + MASTER_PORT);
+        System.out.println("[Master] Connected to reducer at " + reducerHost + ":" + reducerPort);
         System.out.println("[Master] Connected to " + numOfWorkers + " workers.");
 
-        while (true){
+        while (true) {
             Socket clientSocket = serverSocket.accept();
             System.out.println("[Master] New client: " + clientSocket.getInetAddress());
-            Thread handler = new Thread(new ClientHandler(clientSocket));
-            handler.start();
+            new Thread(new ClientHandler(clientSocket)).start();
         }
-
     }
 
-    
-    private static void initWorkerConnections(String[] workerAddresses){
+    private static void initWorkerConnections(String[] workerAddresses) {
         for (String address : workerAddresses) {
             String[] parts = address.split(":");
+            if (parts.length != 2) {
+                System.out.println("[Master] Invalid worker address skipped: " + address);
+                continue;
+            }
+
             String host = parts[0];
             int port = Integer.parseInt(parts[1]);
+
             WorkerConnection wc = new WorkerConnection(host, port);
             wc.connect();
             workerConnections.add(wc);
-            System.out.println("[Master] Connected to worker at " + address);
 
+            System.out.println("[Master] Connected to worker at " + address);
         }
     }
 
-    public static int routeToWorker(String gameName){
+    public static int routeToWorker(String gameName) {
         return Math.abs(gameName.hashCode()) % numOfWorkers;
     }
-
-    public static WorkerConnection getWorkerConnection(int workerId){
+    public static WorkerConnection getWorkerConnection(int workerId) {
         return workerConnections.get(workerId);
     }
-
-    public static List<WorkerConnection> getAllWorkerConnections(){
+    public static List<WorkerConnection> getAllWorkerConnections() {
         return workerConnections;
     }
-    static ReducerConnection getReducerConnection(){
+    public static ReducerConnection getReducerConnection() {
         return reducerConnection;
     }
-    static String getReducerHost() { return reducerHost; }
-    static int    getReducerPort() { return reducerPort; }
-    static int    getNumberOfWorkers() { return numOfWorkers; }
+    public static String getReducerHost() {
+        return reducerHost;
+    }
+    public static int getReducerPort() {
+        return reducerPort;
+    }
+    public static int getNumberOfWorkers() {
+        return numOfWorkers;
+    }
 }
 
-class ClientHandler implements Runnable{
+class ClientHandler implements Runnable {
     private final Socket socket;
 
-    private static final String CMD_ADD_GAME    = "ADD_GAME";
+    private static final String CMD_ADD_GAME = "ADD_GAME";
     private static final String CMD_REMOVE_GAME = "REMOVE_GAME";
-    private static final String CMD_EDIT_GAME   = "EDIT_GAME";
-    private static final String CMD_SEARCH      = "SEARCH";
-    private static final String CMD_PLAY        = "PLAY";
+    private static final String CMD_EDIT_GAME = "EDIT_GAME";
+    private static final String CMD_SEARCH = "SEARCH";
+    private static final String CMD_PLAY = "PLAY";
     private static final String CMD_ADD_BALANCE = "ADD_BALANCE";
-    private static final String CMD_STATS_PROV  = "STATS_PROVIDER";
-    private static final String CMD_STATS_PLAYER= "STATS_PLAYER";
+    private static final String CMD_STATS_PROVIDER = "STATS_PROVIDER";
+    private static final String CMD_STATS_PLAYER = "STATS_PLAYER";
 
     public ClientHandler(Socket socket) {
         this.socket = socket;
@@ -92,10 +120,10 @@ class ClientHandler implements Runnable{
     public void run() {
         try (
             BufferedReader in = new BufferedReader(new InputStreamReader(socket.getInputStream()));
-            PrintWriter   out = new PrintWriter(socket.getOutputStream(),true)
+            PrintWriter out = new PrintWriter(socket.getOutputStream(), true)
         ) {
             String line;
-            while ((line = in.readLine()) != null){
+            while ((line = in.readLine()) != null) {
                 System.out.println("[ClientHandler] Received: " + line);
                 String response = handleCommand(line);
                 out.println(response);
@@ -103,222 +131,313 @@ class ClientHandler implements Runnable{
         } catch (IOException e) {
             System.err.println("[ClientHandler] Connection error: " + e.getMessage());
         } finally {
-            try {socket.close();} catch (IOException ignored) {}
+            try {
+                socket.close();
+            } catch (IOException ignored) {
+            }
         }
     }
 
     private String handleCommand(String rawMessage) {
-        String[] parts = rawMessage.split("\\|", 2);
-        String cmd = parts[0];
+        if (rawMessage == null || rawMessage.isBlank()) {
+            return "ERROR|Empty command";
+        }
+
+        String[] parts2 = rawMessage.split("\\|", 2);
+        String cmd = parts2[0];
+
         return switch (cmd) {
-            case CMD_ADD_GAME -> handleAddGame(parts);
-            case CMD_REMOVE_GAME -> handleRemoveGame(parts);
+            case CMD_ADD_GAME -> handleAddGame(parts2);
+            case CMD_REMOVE_GAME -> handleRemoveGame(parts2);
             case CMD_EDIT_GAME -> handleEditGame(rawMessage.split("\\|"));
             case CMD_SEARCH -> handleSearch(rawMessage.split("\\|"));
             case CMD_PLAY -> handlePlay(rawMessage.split("\\|"));
             case CMD_ADD_BALANCE -> handleAddBalance(rawMessage.split("\\|"));
-            case CMD_STATS_PROV -> handleStatsProvider(rawMessage.split("\\|"));
+            case CMD_STATS_PROVIDER -> handleStatsProvider(rawMessage.split("\\|"));
             case CMD_STATS_PLAYER -> handleStatsPlayer(rawMessage.split("\\|"));
             default -> "ERROR|Unknown command: " + cmd;
         };
     }
- 
-    // --- ADD_GAME|<json> ---
+
     private String handleAddGame(String[] parts) {
         String gameJson = parts.length > 1 ? parts[1] : "";
         String gameName = parseGameName(gameJson);
+
+        if (gameName.isEmpty()) {
+            return "ERROR|GameName not found in JSON";
+        }
+
         int workerId = Master.routeToWorker(gameName);
         return Master.getWorkerConnection(workerId).sendAndReceive("ADD_GAME|" + gameJson);
     }
- 
-    // --- REMOVE_GAME|<gameName> ---
+
     private String handleRemoveGame(String[] parts) {
         String gameName = parts.length > 1 ? parts[1] : "";
+
+        if (gameName.isEmpty()) {
+            return "ERROR|Missing game name";
+        }
+
         int workerId = Master.routeToWorker(gameName);
         return Master.getWorkerConnection(workerId).sendAndReceive("REMOVE_GAME|" + gameName);
     }
- 
-    // --- EDIT_GAME|<gameName>|<field>|<value> ---
+
     private String handleEditGame(String[] p) {
-        if (p.length < 4) return "ERROR|Invalid edit command";
-        int workerId = Master.routeToWorker(p[1]);
+        if (p.length < 4) {
+            return "ERROR|Usage: EDIT_GAME|gameName|field|value";
+        }
+
+        String gameName = p[1];
+        int workerId = Master.routeToWorker(gameName);
+
         return Master.getWorkerConnection(workerId)
                 .sendAndReceive("EDIT_GAME|" + p[1] + "|" + p[2] + "|" + p[3]);
     }
- 
-    // --- SEARCH|<riskLevel>|<betCategory>|<minStars> ---
-    // Fan-out σε όλους τους Workers παράλληλα
+
     private String handleSearch(String[] p) {
-        String filters = p.length > 1 ? String.join("|", Arrays.copyOfRange(p, 1, p.length)) : "";
-        List<String> partialResults = new ArrayList<>();
+        if (p.length < 4) {
+            return "ERROR|Usage: SEARCH|risk|betCategory|minStars";
+        }
+
+        String risk = p[1];
+        String bet = p[2];
+        String minStars = p[3];
+
+        String jobId = "job-search-" + System.currentTimeMillis();
+        int n = Master.getNumberOfWorkers();
+
+        String initAck = Master.getReducerConnection()
+                .sendAndReceive("INIT_REDUCE_SEARCH|" + jobId + "|" + n);
+        System.out.println("[Master] Reducer init search: " + initAck);
+
         List<Thread> threads = new ArrayList<>();
- 
         for (WorkerConnection wc : Master.getAllWorkerConnections()) {
-            final String msg = "SEARCH|" + filters;
+            String msg = "MAP_SEARCH|" + jobId + "|" + risk + "|" + bet + "|" + minStars
+                    + "|" + Master.getReducerHost() + "|" + Master.getReducerPort();
+
+            Thread t = new Thread(() -> wc.sendAndReceive(msg));
+            threads.add(t);
+            t.start();
+        }
+
+        joinAll(threads);
+
+        return Master.getReducerConnection().sendAndReceive("GET_RESULT|" + jobId);
+    }
+
+    private String handlePlay(String[] p) {
+        if (p.length < 4) {
+            return "ERROR|Usage: PLAY|playerId|gameName|betAmount";
+        }
+
+        String playerId = p[1];
+        String gameName = p[2];
+        String betAmount = p[3];
+
+        // Εύρεση του σωστού Worker βάσει του ονόματος του παιχνιδιού
+        int workerId = Master.routeToWorker(gameName); 
+        
+        // Αποστολή του αιτήματος ΜΟΝΟ στον συγκεκριμένο Worker
+        return Master.getWorkerConnection(workerId)
+                    .sendAndReceive("PLAY|" + playerId + "|" + gameName + "|" + betAmount);
+    }
+
+    private String handleAddBalance(String[] p) {
+        if (p.length < 3) {
+            return "ERROR|Usage: ADD_BALANCE|playerId|amount";
+        }
+
+        String playerId = p[1];
+        String amount = p[2];
+
+        List<String> responses = Collections.synchronizedList(new ArrayList<>());
+        List<Thread> threads = new ArrayList<>();
+
+        for (WorkerConnection wc : Master.getAllWorkerConnections()) {
             Thread t = new Thread(() -> {
-                String result = wc.sendAndReceive(msg);
-                synchronized (partialResults) { partialResults.add(result); }
+                String res = wc.sendAndReceive("ADD_BALANCE|" + playerId + "|" + amount);
+                responses.add(res);
             });
             threads.add(t);
             t.start();
         }
+
         joinAll(threads);
- 
-        StringBuilder merged = new StringBuilder("SEARCH_RESULTS|");
-        for (String r : partialResults) {
-            if (!r.equals("EMPTY")) merged.append(r);
+
+        for (String r : responses) {
+            if (r != null && r.startsWith("OK|")) {
+                return r;
+            }
         }
-        return merged.toString();
+
+        return "ERROR|Balance update failed";
     }
- 
-    // --- PLAY|<playerId>|<gameName>|<betAmount> ---
-    private String handlePlay(String[] p) {
-        if (p.length < 4) return "ERROR|Invalid play command";
-        int workerId = Master.routeToWorker(p[2]);
-        return Master.getWorkerConnection(workerId)
-                .sendAndReceive("PLAY|" + p[1] + "|" + p[2] + "|" + p[3]);
-    }
- 
-    // --- ADD_BALANCE|<playerId>|<amount> ---
-    private String handleAddBalance(String[] p) {
-        // TODO: υλοποιήστε διαχείριση υπολοίπου
-        return "OK|Balance updated";
-    }
- 
-    // --- STATS_PROVIDER|<providerName> ---
-    // Νέος MapReduce flow: Master → Reducer (INIT) → Workers (MAP) → Reducer (collect) → Master (GET_RESULT)
+
     private String handleStatsProvider(String[] p) {
-        String providerName = p.length > 1 ? p[1] : "";
+        if (p.length < 2) {
+            return "ERROR|Usage: STATS_PROVIDER|providerName";
+        }
+
+        String providerName = p[1];
         String jobId = "job-prov-" + System.currentTimeMillis();
         int n = Master.getNumberOfWorkers();
- 
-        // Βήμα 1: Ειδοποίησε τον Reducer να περιμένει N αποτελέσματα
+
         String initAck = Master.getReducerConnection()
                 .sendAndReceive("INIT_REDUCE_PROVIDER|" + jobId + "|" + n);
         System.out.println("[Master] Reducer init: " + initAck);
- 
-        // Βήμα 2: Στείλε MAP εντολή σε κάθε Worker παράλληλα
-        // Ο κάθε Worker θα στείλει αποτέλεσμα ΑΠΕΥΘΕΙΑΣ στον Reducer
+
         List<Thread> threads = new ArrayList<>();
         for (WorkerConnection wc : Master.getAllWorkerConnections()) {
             String msg = "MAP_PROVIDER|" + jobId + "|" + providerName
                     + "|" + Master.getReducerHost() + "|" + Master.getReducerPort();
+
             Thread t = new Thread(() -> wc.sendAndReceive(msg));
             threads.add(t);
             t.start();
         }
+
         joinAll(threads);
- 
-        // Βήμα 3: Ζήτα το τελικό αποτέλεσμα από τον Reducer (blocking)
         return Master.getReducerConnection().sendAndReceive("GET_RESULT|" + jobId);
     }
- 
-    // --- STATS_PLAYER|<playerId> ---
+
     private String handleStatsPlayer(String[] p) {
-        String playerId = p.length > 1 ? p[1] : "";
+        if (p.length < 2) {
+            return "ERROR|Usage: STATS_PLAYER|playerId";
+        }
+
+        String playerId = p[1];
         String jobId = "job-player-" + System.currentTimeMillis();
         int n = Master.getNumberOfWorkers();
- 
+
         String initAck = Master.getReducerConnection()
                 .sendAndReceive("INIT_REDUCE_PLAYER|" + jobId + "|" + n);
         System.out.println("[Master] Reducer init: " + initAck);
- 
+
         List<Thread> threads = new ArrayList<>();
         for (WorkerConnection wc : Master.getAllWorkerConnections()) {
             String msg = "MAP_PLAYER|" + jobId + "|" + playerId
                     + "|" + Master.getReducerHost() + "|" + Master.getReducerPort();
+
             Thread t = new Thread(() -> wc.sendAndReceive(msg));
             threads.add(t);
             t.start();
         }
+
         joinAll(threads);
- 
         return Master.getReducerConnection().sendAndReceive("GET_RESULT|" + jobId);
     }
- 
-    // -----------------------------------------------------------------
-    // Helpers
-    // -----------------------------------------------------------------
+
     private void joinAll(List<Thread> threads) {
         for (Thread t : threads) {
-            try { t.join(); } catch (InterruptedException e) { Thread.currentThread().interrupt(); }
+            try {
+                t.join();
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                System.err.println("[Master] Thread interrupted");
+            }
         }
     }
- 
-    
+
+    private String parseGameName(String gameJson) {
+        if (gameJson == null) return "";
+
+        String key = "\"GameName\"";
+        int keyPos = gameJson.indexOf(key);
+        if (keyPos < 0) return "";
+
+        int colonPos = gameJson.indexOf(':', keyPos);
+        if (colonPos < 0) return "";
+
+        int firstQuote = gameJson.indexOf('"', colonPos + 1);
+        if (firstQuote < 0) return "";
+
+        int secondQuote = gameJson.indexOf('"', firstQuote + 1);
+        if (secondQuote < 0) return "";
+
+        return gameJson.substring(firstQuote + 1, secondQuote).trim();
+    }
 }
 
 class WorkerConnection {
-
     private final String host;
     private final int port;
+
     private Socket socket;
     private PrintWriter out;
     private BufferedReader in;
 
     public WorkerConnection(String host, int port) {
-        this.port = port;
         this.host = host;
+        this.port = port;
     }
 
-    public void connect(){
+    public void connect() {
         try {
-            socket = new Socket(host,port);
-            out = new PrintWriter(socket.getOutputStream(),true);
+            socket = new Socket(host, port);
+            out = new PrintWriter(socket.getOutputStream(), true);
             in = new BufferedReader(new InputStreamReader(socket.getInputStream()));
         } catch (IOException e) {
-            System.err.println("[WorkerConnection] Cannot connect to "+ host + ":"+ port);
+            System.err.println("[WorkerConnection] Cannot connect to " + host + ":" + port);
         }
     }
 
-    public synchronized String sendAndReceive(String Message){
+    public synchronized String sendAndReceive(String message) {
         try {
-            out.println(Message);
-            return in.readLine();
+            out.println(message);
+            String response = in.readLine();
+            return response == null ? "ERROR|Worker closed connection" : response;
         } catch (IOException e) {
-            System.err.println("[WorkerConnection] Error: "+ e.getMessage());
-            return "ERROR";
+            System.err.println("[WorkerConnection] Error: " + e.getMessage());
+            return "ERROR|Worker communication failure";
         }
     }
 
-    public void close(){
-        try{ if (socket != null) socket.close();} catch (IOException ignored) {}
+    public void close() {
+        try {
+            if (socket != null) socket.close();
+        } catch (IOException ignored) {
+        }
     }
 }
 
 class ReducerConnection {
-
     private final String host;
     private final int port;
+
     private Socket socket;
     private PrintWriter out;
     private BufferedReader in;
-    
+
     public ReducerConnection(String host, int port) {
         this.host = host;
         this.port = port;
     }
 
-    public void connect(){
+    public void connect() {
         try {
-            socket = new Socket(host,port);
-            out = new PrintWriter(socket.getOutputStream(),true);
+            socket = new Socket(host, port);
+            out = new PrintWriter(socket.getOutputStream(), true);
             in = new BufferedReader(new InputStreamReader(socket.getInputStream()));
         } catch (IOException e) {
-            System.err.println("[ReducerConnection] Cannot connect to "+ host + ":"+ port);
+            System.err.println("[ReducerConnection] Cannot connect to " + host + ":" + port);
         }
     }
 
-    public synchronized  String sendAndReceive(String Message){
+    public synchronized String sendAndReceive(String message) {
         try {
-            out.println(Message);
-            return in.readLine();
+            out.println(message);
+            String response = in.readLine();
+            return response == null ? "ERROR|Reducer closed connection" : response;
         } catch (IOException e) {
-            System.err.println("[ReducerConnection] Error: "+ e.getMessage());
-            return "ERROR";
+            System.err.println("[ReducerConnection] Error: " + e.getMessage());
+            return "ERROR|Reducer communication failure";
         }
     }
-    public void close(){
-        try{ if (socket != null) socket.close();} catch (IOException ignored) {}
+
+    public void close() {
+        try {
+            if (socket != null) socket.close();
+        } catch (IOException ignored) {
+        }
     }
 }

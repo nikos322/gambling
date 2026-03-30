@@ -1,181 +1,153 @@
 import java.io.*;
 import java.net.*;
+import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
-import java.security.SecureRandom;
-import java.util.*;
+import java.security.NoSuchAlgorithmException;
+import java.util.LinkedList;
+import java.util.Queue;
+import java.util.Random;
 
 public class SRGServer {
- 
-    private static final int DEFAULT_PORT   = 7000;
-    private static final int BUFFER_SIZE    = 100;  // max αριθμοί ανά game στο buffer
- 
-    // gameName -> RandomBuffer (producer-consumer buffer)
-    static final Map<String, RandomBuffer> buffers = new HashMap<>();
-    // gameName -> shared secret
-    static final Map<String, String> secrets = new HashMap<>();
- 
+
+    private static final Queue<Integer> buffer = new LinkedList<>();
+    private static final Object lock = new Object();
+    private static final int MAX = 10;
+
     public static void main(String[] args) throws IOException {
-        int port = args.length > 0 ? Integer.parseInt(args[0]) : DEFAULT_PORT;
- 
+        if (args.length < 1) {
+            System.out.println("Usage: java SRGServer <port>");
+            return;
+        }
+
+        int port = Integer.parseInt(args[0]);
+
+        new Thread(new Producer()).start();
+
         ServerSocket serverSocket = new ServerSocket(port);
-        System.out.println("[SRGServer] Listening on port " + port);
- 
+        System.out.println("[SRG] Running on port " + port);
+
         while (true) {
-            Socket workerSocket = serverSocket.accept();
-            new Thread(new SRGHandler(workerSocket)).start();
+            Socket socket = serverSocket.accept();
+            new Thread(new Handler(socket)).start();
         }
     }
 
-    static synchronized void registerGame(String gameName, String secret) {
-        if (!buffers.containsKey(gameName)) {
-            RandomBuffer buf = new RandomBuffer(BUFFER_SIZE);
-            buffers.put(gameName, buf);
-            secrets.put(gameName, secret);
- 
-            // Ξεκίνα producer thread για αυτό το παιχνίδι
-            Thread producer = new Thread(new ProducerThread(buf), "Producer-" + gameName);
-            producer.setDaemon(true);
-            producer.start();
-            System.out.println("[SRGServer] Registered game: " + gameName);
-        }
-    }
-}
+    static class Producer implements Runnable {
+        @Override
+        public void run() {
+            Random rand = new Random();
 
-class RandomBuffer {
- 
-    private final int capacity;
-    private final Queue<Integer> queue = new LinkedList<>();
- 
-    public RandomBuffer(int capacity) {
-        this.capacity = capacity;
-    }
- 
-    public synchronized void produce(int number) throws InterruptedException {
-        while (queue.size() >= capacity) {
-            wait();
-        }
-        queue.offer(number);
-        notifyAll();
-    }
- 
+            while (true) {
+                synchronized (lock) {
+                    while (buffer.size() >= MAX) {
+                        try {
+                            lock.wait();
+                        } catch (InterruptedException e) {
+                            Thread.currentThread().interrupt();
+                            return;
+                        }
+                    }
 
-    public synchronized int consume() throws InterruptedException {
-        while (queue.isEmpty()) {
-            wait(); 
-        }
-        int number = queue.poll();
-        notifyAll();
-        return number;
-    }
- 
-    public synchronized int size() {
-        return queue.size();
-    }
-}
+                    int num = rand.nextInt(Integer.MAX_VALUE);
+                    buffer.add(num);
+                    System.out.println("[SRG] Produced: " + num);
 
-class ProducerThread implements Runnable {
- 
-    private final RandomBuffer buffer;
-    private final SecureRandom rng = new SecureRandom();
- 
-    private static final long PRODUCE_DELAY_MS = 50;
- 
-    public ProducerThread(RandomBuffer buffer) {
-        this.buffer = buffer;
-    }
- 
-    @Override
-    public void run() {
-        while (true) {
-            try {
-                int number = Math.abs(rng.nextInt()); // θετικός τυχαίος αριθμός
-                buffer.produce(number);
-                Thread.sleep(PRODUCE_DELAY_MS);
-            } catch (InterruptedException e) {
-                Thread.currentThread().interrupt();
-                break;
+                    lock.notifyAll();
+                }
+
+                try {
+                    Thread.sleep(100);
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                    return;
+                }
             }
         }
     }
-}
-class SRGHandler implements Runnable {
- 
-    private final Socket socket;
- 
-    public SRGHandler(Socket socket) {
-        this.socket = socket;
-    }
- 
-    @Override
-    public void run() {
-        try (
-            BufferedReader in  = new BufferedReader(new InputStreamReader(socket.getInputStream()));
-            PrintWriter    out = new PrintWriter(socket.getOutputStream(), true)
-        ) {
-            String line;
-            while ((line = in.readLine()) != null) {
-                String response = dispatch(line);
-                out.println(response);
+
+    static class Handler implements Runnable {
+        private final Socket socket;
+
+        Handler(Socket socket) {
+            this.socket = socket;
+        }
+
+        @Override
+        public void run() {
+            try (
+                BufferedReader in = new BufferedReader(new InputStreamReader(socket.getInputStream()));
+                PrintWriter out = new PrintWriter(socket.getOutputStream(), true)
+            ) {
+                String request;
+                while ((request = in.readLine()) != null) {
+                    String response = handleRequest(request);
+                    out.println(response);
+                }
+            } catch (IOException e) {
+                System.out.println("[SRG] Worker disconnected");
+            } finally {
+                try {
+                    socket.close();
+                } catch (IOException ignored) {
+                }
             }
-        } catch (IOException e) {
-            System.err.println("[SRGHandler] " + e.getMessage());
-        } finally {
-            try { socket.close(); } catch (IOException ignored) {}
         }
-    }
- 
-    private String dispatch(String msg) {
-        String[] p = msg.split("\\|");
-        switch (p[0]) {
-            case "REGISTER":   return handleRegister(p);
-            case "GET_RANDOM": return handleGetRandom(p);
-            default:           return "ERROR|Unknown command";
-        }
-    }
- 
-    // --- REGISTER|<gameName>|<secret> ---
-    private String handleRegister(String[] p) {
-        if (p.length < 3) return "ERROR|Missing gameName or secret";
-        SRGServer.registerGame(p[1], p[2]);
-        return "OK|Registered " + p[1];
-    }
- 
-    // --- GET_RANDOM|<gameName> ---
-    private String handleGetRandom(String[] p) {
-        if (p.length < 2) return "ERROR|Missing gameName";
-        String gameName = p[1];
- 
-        RandomBuffer buf = SRGServer.buffers.get(gameName);
-        String secret    = SRGServer.secrets.get(gameName);
- 
-        if (buf == null || secret == null) {
-            return "ERROR|Game not registered: " + gameName;
-        }
- 
-        try {
-            // Consumer: παίρνει αριθμό από buffer (wait αν άδειο)
-            int number = buf.consume();
- 
-            // Υπολογισμός sha256(number + secret) για επαλήθευση από Worker
-            String hash = sha256(number + secret);
- 
+
+        private String handleRequest(String request) {
+            if (request == null || request.isBlank()) {
+                return "ERROR|Empty request";
+            }
+
+            String[] parts = request.split("\\|");
+            if (parts.length < 3) {
+                return "ERROR|Usage: GET_RANDOM|gameName|secret";
+            }
+
+            String cmd = parts[0];
+            String gameName = parts[1];
+            String secret = parts[2];
+
+            if (!"GET_RANDOM".equals(cmd)) {
+                return "ERROR|Unknown command";
+            }
+
+            if (secret == null || secret.isBlank()) {
+                return "ERROR|Missing secret";
+            }
+
+            int number;
+            synchronized (lock) {
+                while (buffer.isEmpty()) {
+                    try {
+                        lock.wait();
+                    } catch (InterruptedException e) {
+                        Thread.currentThread().interrupt();
+                        return "ERROR|Interrupted";
+                    }
+                }
+
+                number = buffer.poll();
+                lock.notifyAll();
+            }
+
+            String hash = sha256(String.valueOf(number) + secret);
+            System.out.println("[SRG] Sent to game=" + gameName + " number=" + number);
+
             return number + "|" + hash;
- 
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
-            return "ERROR|Interrupted";
         }
-    }
- 
-    private String sha256(String input) {
-        try {
-            MessageDigest md = MessageDigest.getInstance("SHA-256");
-            byte[] hash = md.digest(input.getBytes("UTF-8"));
-            StringBuilder sb = new StringBuilder();
-            for (byte b : hash) sb.append(String.format("%02x", b));
-            return sb.toString();
-        } catch (Exception e) {
-            throw new RuntimeException("SHA-256 failed", e);
+
+        private String sha256(String value) {
+            try {
+                MessageDigest md = MessageDigest.getInstance("SHA-256");
+                byte[] hash = md.digest(value.getBytes(StandardCharsets.UTF_8));
+                StringBuilder sb = new StringBuilder();
+                for (byte b : hash) {
+                    sb.append(String.format("%02x", b));
+                }
+                return sb.toString();
+            } catch (NoSuchAlgorithmException e) {
+                throw new RuntimeException("SHA-256 unavailable", e);
+            }
         }
     }
 }
