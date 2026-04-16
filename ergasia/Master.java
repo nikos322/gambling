@@ -1,4 +1,6 @@
 import java.io.BufferedReader;
+import java.io.File;
+import java.io.FileReader;
 import java.io.IOException;
 import java.io.InputStreamReader;
 import java.io.PrintWriter;
@@ -9,17 +11,17 @@ import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
 
+
 public class Master {
 
     private static final int MASTER_PORT = 5000;
 
     private static final List<WorkerConnection> workerConnections = new ArrayList<>();
     private static ReducerConnection reducerConnection;
-
     private static String reducerHost;
     private static int reducerPort;
     private static int numOfWorkers;
-    //TODO after init import all games from json 
+
     public static void main(String[] args) throws IOException {
         if (args.length < 2) {
             System.out.println("Usage: java Master <reducerHost:port> <worker1:port> <worker2:port> ...");
@@ -50,14 +52,39 @@ public class Master {
         System.out.println("[Master] Listening on port " + MASTER_PORT);
         System.out.println("[Master] Connected to reducer at " + reducerHost + ":" + reducerPort);
         System.out.println("[Master] Connected to " + numOfWorkers + " workers.");
-        System.out.println("[Master] Importing games from Json ");
-
+        System.out.println("[Master] Importing games from Json file ");
+        distributeJsonToWorkers("game.json");
         
         while (true) {
             Socket clientSocket = serverSocket.accept();
             System.out.println("[Master] New client: " + clientSocket.getInetAddress());
             new Thread(new ClientHandler(clientSocket)).start();
         }
+    }
+
+    private static void distributeJsonToWorkers(String path){
+        StringBuilder toSend = new StringBuilder();
+        String gameName;
+        int workerId = 1;
+        try {
+            FileReader fr = new FileReader(new File(path));
+            List<String> readGames = fr.readAllLines();
+            for (String line : readGames) {
+                if (line.contains("{")) {
+                    toSend.delete(0, toSend.length() - 1);
+                } else if (line.contains("GameName")) {
+                    gameName = ClientHandler.parseGameName(line);
+                    workerId = routeToWorker(gameName);
+                } else if (line.contains("}")) {
+                    getWorkerConnection(workerId).sendAndReceive("ADD_GAME|" + toSend.toString());
+                } else {
+                    toSend.append(line.trim());
+                }
+            }
+        } catch (IOException e) {
+            System.out.println("[Master] Failed loading games. Check file path or name");
+        }
+        
     }
 
     private static void initWorkerConnections(String[] workerAddresses) {
@@ -140,7 +167,7 @@ class ClientHandler implements Runnable {
         }
     }
 
-    private String handleCommand(String rawMessage) {
+    String handleCommand(String rawMessage) {
         if (rawMessage == null || rawMessage.isBlank()) {
             return "ERROR|Empty command";
         }
@@ -161,7 +188,7 @@ class ClientHandler implements Runnable {
         };
     }
 
-    private String handleAddGame(String[] parts) {
+    String handleAddGame(String[] parts) {
         String gameJson = parts.length > 1 ? parts[1] : "";
         String gameName = parseGameName(gameJson);
 
@@ -173,7 +200,7 @@ class ClientHandler implements Runnable {
         return Master.getWorkerConnection(workerId).sendAndReceive("ADD_GAME|" + gameJson);
     }
 
-    private String handleRemoveGame(String[] parts) {
+    String handleRemoveGame(String[] parts) {
         String gameName = parts.length > 1 ? parts[1] : "";
 
         if (gameName.isEmpty()) {
@@ -184,7 +211,7 @@ class ClientHandler implements Runnable {
         return Master.getWorkerConnection(workerId).sendAndReceive("REMOVE_GAME|" + gameName);
     }
 
-    private String handleEditGame(String[] p) {
+    String handleEditGame(String[] p) {
         if (p.length < 4) {
             return "ERROR|Usage: EDIT_GAME|gameName|field|value";
         }
@@ -196,7 +223,7 @@ class ClientHandler implements Runnable {
                 .sendAndReceive("EDIT_GAME|" + p[1] + "|" + p[2] + "|" + p[3]);
     }
 
-    private String handleSearch(String[] p) {
+    String handleSearch(String[] p) {
         if (p.length < 4) {
             return "ERROR|Usage: SEARCH|risk|betCategory|minStars";
         }
@@ -227,7 +254,7 @@ class ClientHandler implements Runnable {
         return Master.getReducerConnection().sendAndReceive("GET_RESULT|" + jobId);
     }
 
-    private String handlePlay(String[] p) {
+    String handlePlay(String[] p) {
         if (p.length < 4) {
             return "ERROR|Usage: PLAY|playerId|gameName|betAmount";
         }
@@ -236,15 +263,13 @@ class ClientHandler implements Runnable {
         String gameName = p[2];
         String betAmount = p[3];
 
-        // Εύρεση του σωστού Worker βάσει του ονόματος του παιχνιδιού
         int workerId = Master.routeToWorker(gameName); 
         
-        // Αποστολή του αιτήματος ΜΟΝΟ στον συγκεκριμένο Worker
         return Master.getWorkerConnection(workerId)
                     .sendAndReceive("PLAY|" + playerId + "|" + gameName + "|" + betAmount);
     }
 
-    private String handleAddBalance(String[] p) {
+    String handleAddBalance(String[] p) {
         if (p.length < 3) {
             return "ERROR|Usage: ADD_BALANCE|playerId|amount";
         }
@@ -275,7 +300,7 @@ class ClientHandler implements Runnable {
         return "ERROR|Balance update failed";
     }
 
-    private String handleStatsProvider(String[] p) {
+    String handleStatsProvider(String[] p) {
         if (p.length < 2) {
             return "ERROR|Usage: STATS_PROVIDER|providerName";
         }
@@ -302,7 +327,7 @@ class ClientHandler implements Runnable {
         return Master.getReducerConnection().sendAndReceive("GET_RESULT|" + jobId);
     }
 
-    private String handleStatsPlayer(String[] p) {
+    String handleStatsPlayer(String[] p) {
         if (p.length < 2) {
             return "ERROR|Usage: STATS_PLAYER|playerId";
         }
@@ -329,7 +354,7 @@ class ClientHandler implements Runnable {
         return Master.getReducerConnection().sendAndReceive("GET_RESULT|" + jobId);
     }
 
-    private void joinAll(List<Thread> threads) {
+    void joinAll(List<Thread> threads) {
         for (Thread t : threads) {
             try {
                 t.join();
@@ -340,7 +365,7 @@ class ClientHandler implements Runnable {
         }
     }
 
-    private String parseGameName(String gameJson) {
+    static String parseGameName(String gameJson) {
         if (gameJson == null) return "";
 
         String key = "\"GameName\"";
