@@ -19,7 +19,7 @@ public class Master {
     private static String reducerHost;
     private static int reducerPort;
     private static int numOfWorkers;
-    //TODO after init import all games from json / make json 
+    //TODO after init import all games from json 
     public static void main(String[] args) throws IOException {
         if (args.length < 2) {
             System.out.println("Usage: java Master <reducerHost:port> <worker1:port> <worker2:port> ...");
@@ -50,7 +50,9 @@ public class Master {
         System.out.println("[Master] Listening on port " + MASTER_PORT);
         System.out.println("[Master] Connected to reducer at " + reducerHost + ":" + reducerPort);
         System.out.println("[Master] Connected to " + numOfWorkers + " workers.");
+        System.out.println("[Master] Importing games from Json ");
 
+        
         while (true) {
             Socket clientSocket = serverSocket.accept();
             System.out.println("[Master] New client: " + clientSocket.getInetAddress());

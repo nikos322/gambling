@@ -84,7 +84,6 @@ public class Reducer {
             return "OK|INIT|" + jobId;
         }
 
-        // TODO ti kanei auto
         private String addPartial(String[] p) {
             if (p.length < 3) {
                 return "ERROR|Invalid PARTIAL";
@@ -171,10 +170,10 @@ public class Reducer {
             }
 
            if (jobId.startsWith("job-prov-")) {
-            // TODO add profit
                 int totalGames = 0;
                 int activeGames = 0;
                 String provider = "";
+                float profit = 0;
 
                 for (String r : nonEmpty) {
                     String[] parts = r.split(",");
@@ -186,13 +185,16 @@ public class Reducer {
                             totalGames += Integer.parseInt(part.split("=")[1]);
                         } else if (part.startsWith("ACTIVE=")) {
                             activeGames += Integer.parseInt(part.split("=")[1]);
+                        } else if (part.startsWith("PROFIT=")) {
+                            profit += Integer.parseInt(part.split("=")[1]);
                         }
                     }
                 }
 
                 return "PROVIDER_STATS|Provider=" + provider
                         + "|TotalGames=" + totalGames
-                        + "|ActiveGames=" + activeGames;
+                        + "|ActiveGames=" + activeGames
+                        + "|TotalProfit=" + profit;
                 }
 
            if (jobId.startsWith("job-player-")) {

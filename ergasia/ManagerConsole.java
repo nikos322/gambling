@@ -11,7 +11,6 @@ public class ManagerConsole {
     private static final String DEFAULT_MASTER_HOST = "127.0.0.1";
     private static final int DEFAULT_MASTER_PORT = 5000;
     
-    //TODO in english pls / better messages and menu pointers
     public static void main(String[] args) {
         String masterHost = args.length >= 1 ? args[0] : DEFAULT_MASTER_HOST;
         int masterPort = args.length >= 2 ? Integer.parseInt(args[1]) : DEFAULT_MASTER_PORT;
@@ -31,7 +30,7 @@ public class ManagerConsole {
 
             while (running) {
                 printMenu();
-                System.out.print("Επιλογή: ");
+                System.out.print("Select action: ");
                 String choice = sc.nextLine().trim();
 
                 switch (choice) {
@@ -42,16 +41,14 @@ public class ManagerConsole {
                     case "5" -> handleStatsPlayer(sc, out, in);
                     case "0" -> {
                         running = false;
-                        System.out.println("Έξοδος από Manager Console.");
+                        System.out.println("Exiting Manager Console...");
                     }
-                    default -> System.out.println("Μη έγκυρη επιλογή.");
+                    default -> System.out.println("Please choose between 0-5");
                 }
-
-                System.out.println();
             }
 
         } catch (IOException e) {
-            System.err.println("Αποτυχία σύνδεσης με Master: " + e.getMessage());
+            System.err.println("Failed to connect to Master: " + e.getMessage());
         }
     }
 
@@ -90,12 +87,12 @@ public class ManagerConsole {
 
         String gameName = prompt(sc, "Game name");
 
-        System.out.println("Πεδία που μπορείς να αλλάξεις:");
+        System.out.println("Alterable fields:");
         System.out.println("1. Risk");
         System.out.println("2. MinimumBet");
         System.out.println("3. GameType");
 
-        System.out.print("Επιλογή πεδίου: ");
+        System.out.print("Select field: ");
         String option = sc.nextLine().trim();
 
         String field;
@@ -115,7 +112,7 @@ public class ManagerConsole {
                 value = prompt(sc, "New game type/category");
             }
             default -> {
-                System.out.println("Μη έγκυρη επιλογή πεδίου.");
+                System.out.println("Please choose between 1-3.");
                 return;
             }
         }
@@ -154,7 +151,7 @@ public class ManagerConsole {
 
         String response = in.readLine();
         if (response == null) {
-            System.out.println("[Master -> Manager] Δεν λήφθηκε απάντηση.");
+            System.out.println("[Master -> Manager] No response received");
             return;
         }
 
@@ -168,7 +165,7 @@ public class ManagerConsole {
             if (!value.isEmpty()) {
                 return value;
             }
-            System.out.println("Το πεδίο δεν μπορεί να είναι κενό.");
+            System.out.println("Field may not be empty.");
         }
     }
 
@@ -179,12 +176,12 @@ public class ManagerConsole {
             try {
                 double value = Double.parseDouble(raw);
                 if (value < 0) {
-                    System.out.println("Δώσε μη αρνητικό αριθμό.");
+                    System.out.println("Number must be non-negative.");
                     continue;
                 }
                 return value;
             } catch (NumberFormatException e) {
-                System.out.println("Μη έγκυρος αριθμός.");
+                System.out.println("Not a number or not correct format.");
             }
         }
     }
@@ -196,7 +193,7 @@ public class ManagerConsole {
             if (risk.equals("low") || risk.equals("medium") || risk.equals("high")) {
                 return risk;
             }
-            System.out.println("Επιτρεπτές τιμές: low, medium, high");
+            System.out.println("Values: low, medium, high");
         }
     }
 

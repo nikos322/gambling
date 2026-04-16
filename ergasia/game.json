@@ -1,0 +1,68 @@
+[
+  {
+    "GameName": "European Roulette",
+    "ProviderName": "NetEnt",
+    "Stars": 4.5,
+    "NoOfVotes": 1200,
+    "GameLogo": "/images/roulette_classic.png",
+    "MinBet": 0.1,
+    "MaxBet": 100.0,
+    "RiskLevel": "low",
+    "HashKey": "S_ROULETTE_2026"
+  },
+  {
+    "GameName": "Blackjack VIP",
+    "ProviderName": "Evolution",
+    "Stars": 4.8,
+    "NoOfVotes": 850,
+    "GameLogo": "/images/blackjack_vip.png",
+    "MinBet": 5.0,
+    "MaxBet": 500.0,
+    "RiskLevel": "low",
+    "HashKey": "S_BLACKJACK_SECURE"
+  },
+  {
+    "GameName": "Fruit Bonanza",
+    "ProviderName": "PlaynGO",
+    "Stars": 3.9,
+    "NoOfVotes": 2500,
+    "GameLogo": "/images/fruit_slots.png",
+    "MinBet": 0.1,
+    "MaxBet": 20.0,
+    "RiskLevel": "medium",
+    "HashKey": "S_SLOTS_777"
+  },
+  {
+    "GameName": "Texas Holdem Poker",
+    "ProviderName": "PokerStars",
+    "Stars": 4.2,
+    "NoOfVotes": 3100,
+    "GameLogo": "/images/poker_table.png",
+    "MinBet": 1.0,
+    "MaxBet": 250.0,
+    "RiskLevel": "medium",
+    "HashKey": "S_POKER_PRO"
+  },
+  {
+    "GameName": "Mega Jackpot Slot",
+    "ProviderName": "Microgaming",
+    "Stars": 4.7,
+    "NoOfVotes": 5000,
+    "GameLogo": "/images/mega_jackpot.png",
+    "MinBet": 1.0,
+    "MaxBet": 50.0,
+    "RiskLevel": "high",
+    "HashKey": "S_JACKPOT_HIGH"
+  },
+  {
+    "GameName": "High Roller Baccarat",
+    "ProviderName": "PragmaticPlay",
+    "Stars": 4.0,
+    "NoOfVotes": 450,
+    "GameLogo": "/images/baccarat_gold.png",
+    "MinBet": 5.0,
+    "MaxBet": 1000.0,
+    "RiskLevel": "high",
+    "HashKey": "S_BACCARAT_VIP"
+  }
+]

@@ -31,7 +31,7 @@ public class DummyPlayer {
             boolean running = true;
             while (running) {
                 printMenu();
-                System.out.print("Επιλογή: ");
+                System.out.print("Select action: ");
                 String choice = sc.nextLine().trim();
 
                 switch (choice) {
@@ -39,8 +39,8 @@ public class DummyPlayer {
                     case "2" -> handlePlay(sc, out, in, playerId);
                     case "3" -> handleAddBalance(sc, out, in, playerId);
                     case "4" -> {
-                        playerId = askNonEmpty(sc, "Νέο Player ID");
-                        System.out.println("Ο ενεργός player έγινε: " + playerId);
+                        playerId = askNonEmpty(sc, "New Player ID");
+                        System.out.println("Connected player switched to : " + playerId);
                     }
                     case "0" -> {
                         running = false;
