@@ -13,6 +13,7 @@ public class GameInfo {
     String betCategory;
     double jackpot;
 
+    //Constructor
     public GameInfo(String gameName,
                     String providerName,
                     int stars,
@@ -36,12 +37,14 @@ public class GameInfo {
         this.jackpot = computeJackpot(riskLevel);
     }
 
+    // Determines bet category based on minimum bet amount.
     private String computeBetCategory(double minBet) {
         if (minBet >= 5.0) return "$$$";
         if (minBet >= 1.0) return "$$";
         return "$";
     }
 
+    // Assigns jackpot value depending on the risk level.
     private double computeJackpot(String riskLevel) {
         if (riskLevel == null) return 10.0;
         return switch (riskLevel.toLowerCase()) {
@@ -52,13 +55,12 @@ public class GameInfo {
         };
     }
 
+    // Checks if the game satisfies the given search filters.
     public boolean matchesFilter(String risk, String bet, int minStars) {
         if (!active) return false;
-
         boolean riskOk = risk.equals("*") || risk.equalsIgnoreCase(riskLevel);
         boolean betOk = bet.equals("*") || bet.equals(betCategory);
         boolean starsOk = stars >= minStars;
-
         return riskOk && betOk && starsOk;
     }
 

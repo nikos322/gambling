@@ -20,6 +20,7 @@ public class ManagerConsole {
         System.out.println(" Connected target: " + masterHost + ":" + masterPort);
         System.out.println("========================================");
 
+        //Connecting to Master
         try (
             Socket socket = new Socket(masterHost, masterPort);
             BufferedReader in = new BufferedReader(new InputStreamReader(socket.getInputStream()));
@@ -61,15 +62,14 @@ public class ManagerConsole {
         System.out.println("0. Exit");
     }
 
+    // Collects game details from the user and sends an ADD_GAME request.
     private static void handleAddGame(Scanner sc, PrintWriter out, BufferedReader in) throws IOException {
         System.out.println("---- Add Game ----");
-
         String provider = prompt(sc, "Provider name");
         String gameName = prompt(sc, "Game name");
         double minBet = promptDouble(sc, "Minimum bet");
         String risk = promptRisk(sc, "Risk level (low / medium / high)");
         String hashKey = prompt(sc, "HashKey / Secret key for SRG");
-
         String json = "{"
                 + "\"Provider\":\"" + escapeJson(provider) + "\","
                 + "\"GameName\":\"" + escapeJson(gameName) + "\","
@@ -82,11 +82,10 @@ public class ManagerConsole {
         sendAndPrint(request, out, in);
     }
 
+    //Allows user to edit an existing game.
     private static void handleEditGame(Scanner sc, PrintWriter out, BufferedReader in) throws IOException {
         System.out.println("---- Edit Game ----");
-
         String gameName = prompt(sc, "Game name");
-
         System.out.println("Alterable fields:");
         System.out.println("1. Risk");
         System.out.println("2. MinimumBet");
@@ -94,7 +93,6 @@ public class ManagerConsole {
 
         System.out.print("Select field: ");
         String option = sc.nextLine().trim();
-
         String field;
         String value;
 
@@ -123,38 +121,37 @@ public class ManagerConsole {
 
     private static void handleRemoveGame(Scanner sc, PrintWriter out, BufferedReader in) throws IOException {
         System.out.println("---- Remove Game ----");
-
         String gameName = prompt(sc, "Game name");
         String request = "REMOVE_GAME|" + gameName;
         sendAndPrint(request, out, in);
     }
 
+    // Requests aggregated statistics for a specific Provider
+    // and returns combined results such as total bets, wins and balance.
     private static void handleStatsProvider(Scanner sc, PrintWriter out, BufferedReader in) throws IOException {
         System.out.println("---- Stats by Provider ----");
-
         String provider = prompt(sc, "Provider name");
         String request = "STATS_PROVIDER|" + provider;
         sendAndPrint(request, out, in);
     }
 
+    //Same for a specific Player
     private static void handleStatsPlayer(Scanner sc, PrintWriter out, BufferedReader in) throws IOException {
         System.out.println("---- Stats by Player ----");
-
         String playerId = prompt(sc, "Player ID");
         String request = "STATS_PLAYER|" + playerId;
         sendAndPrint(request, out, in);
     }
 
+    // Sends a request to the Master and prints the response.
     private static void sendAndPrint(String request, PrintWriter out, BufferedReader in) throws IOException {
         System.out.println("[Manager -> Master] " + request);
         out.println(request);
-
         String response = in.readLine();
         if (response == null) {
             System.out.println("[Master -> Manager] No response received");
             return;
         }
-
         System.out.println("[Master -> Manager] " + response);
     }
 
@@ -186,6 +183,7 @@ public class ManagerConsole {
         }
     }
 
+    // Ensures a valid risk level is provided.
     private static String promptRisk(Scanner sc, String label) {
         while (true) {
             System.out.print(label + ": ");
@@ -196,7 +194,7 @@ public class ManagerConsole {
             System.out.println("Values: low, medium, high");
         }
     }
-
+    // Formats a double value to string before sending
     private static String formatDouble(double value) {
         if (value == (long) value) {
             return String.format(Locale.US, "%d", (long) value);
