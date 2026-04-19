@@ -7,22 +7,20 @@ import java.util.LinkedList;
 import java.util.Queue;
 import java.util.Random;
 
+// Generates secure random numbers for games and ensures integrity using hashing.
 public class SRGServer {
-
     private static final Queue<Integer> buffer = new LinkedList<>();
     private static final Object lock = new Object();
     private static final int MAX = 10;
 
+    // Starts the SRG server and launches the producer thread for random numbers.
     public static void main(String[] args) throws IOException {
         if (args.length < 1) {
             System.out.println("Usage: java SRGServer <port>");
             return;
         }
-
         int port = Integer.parseInt(args[0]);
-
         new Thread(new Producer()).start();
-
         ServerSocket serverSocket = new ServerSocket(port);
         System.out.println("[SRG] Running on port " + port);
 
@@ -31,7 +29,8 @@ public class SRGServer {
             new Thread(new Handler(socket)).start();
         }
     }
-    
+
+    // Continuously generates random numbers and stores them in a shared buffer
     static class Producer implements Runnable {
         @Override
         public void run() {
@@ -47,14 +46,11 @@ public class SRGServer {
                             return;
                         }
                     }
-
                     int num = rand.nextInt(Integer.MAX_VALUE);
                     buffer.add(num);
                     System.out.println("[SRG] Produced: " + num);
-
-                    lock.notifyAll();
+                    lock.notifyAll(); // Notifies waiting threads that buffer state has changed.
                 }
-
                 try {
                     Thread.sleep(100);
                 } catch (InterruptedException e) {
@@ -65,9 +61,9 @@ public class SRGServer {
         }
     }
 
+    // Handles incoming requests from workers
     static class Handler implements Runnable {
         private final Socket socket;
-
         Handler(Socket socket) {
             this.socket = socket;
         }
@@ -97,20 +93,16 @@ public class SRGServer {
             if (request == null || request.isBlank()) {
                 return "ERROR|Empty request";
             }
-
             String[] parts = request.split("\\|");
             if (parts.length < 3) {
                 return "ERROR|Usage: GET_RANDOM|gameName|secret";
             }
-
             String cmd = parts[0];
             String gameName = parts[1];
             String secret = parts[2];
-
             if (!"GET_RANDOM".equals(cmd)) {
                 return "ERROR|Unknown command";
             }
-
             if (secret == null || secret.isBlank()) {
                 return "ERROR|Missing secret";
             }
@@ -125,17 +117,15 @@ public class SRGServer {
                         return "ERROR|Interrupted";
                     }
                 }
-
-                number = buffer.poll();
+                number = buffer.poll(); //Retrieves and removes a random number from the buffer
                 lock.notifyAll();
             }
-
             String hash = sha256(String.valueOf(number) + secret);
             System.out.println("[SRG] Sent to game=" + gameName + " number=" + number);
-
-            return number + "|" + hash;
+            return number + "|" + hash; //Returns random number along with hash for verification
         }
 
+        // Computes SHA-256 hash used to verify randomness integrity
         private String sha256(String value) {
             try {
                 MessageDigest md = MessageDigest.getInstance("SHA-256");

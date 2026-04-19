@@ -15,18 +15,17 @@ import java.util.Locale;
 import java.util.Map;
 
 public class Worker {
-
     private static final Map<String, GameInfo> games = Collections.synchronizedMap(new HashMap<>());
     private static final Map<String, Double> balances = Collections.synchronizedMap(new HashMap<>());
     private static final Map<String, Double> playerTotalBets = Collections.synchronizedMap(new HashMap<>());
     private static final Map<String, Double> playerTotalWins = Collections.synchronizedMap(new HashMap<>());
     private static final Map<String, Integer> providerGameCount = Collections.synchronizedMap(new HashMap<>());
     private static final Map<String, Integer> providerActiveGameCount = Collections.synchronizedMap(new HashMap<>());
-    private static final Map<String, Double> providerProfits = Collections.synchronizedMap(new HashMap<>());
 
     private static final String DEFAULT_SRG_HOST = "127.0.0.1";
     private static final int DEFAULT_SRG_PORT = 7000;
 
+    // Starts the Worker as a TCP server and accepts connections from the Master.
     public static void main(String[] args) throws IOException {
         if (args.length < 1) {
             System.out.println("Usage: java Worker <port> [srgHost] [srgPort]");
@@ -36,7 +35,6 @@ public class Worker {
         int port = Integer.parseInt(args[0]);
         String srgHost = args.length >= 2 ? args[1] : DEFAULT_SRG_HOST;
         int srgPort = args.length >= 3 ? Integer.parseInt(args[2]) : DEFAULT_SRG_PORT;
-
         ServerSocket serverSocket = new ServerSocket(port);
         System.out.println("[Worker] Listening on port " + port + " | SRG=" + srgHost + ":" + srgPort);
 
@@ -45,12 +43,11 @@ public class Worker {
             new Thread(new Handler(socket, srgHost, srgPort)).start();
         }
     }
-
+    // Handles communication with the Master for each incoming request.
     static class Handler implements Runnable {
         private final Socket socket;
         private final String srgHost;
         private final int srgPort;
-
         Handler(Socket socket, String srgHost, int srgPort) {
             this.socket = socket;
             this.srgHost = srgHost;
@@ -58,6 +55,7 @@ public class Worker {
         }
 
         @Override
+        // Listens for incoming requests, processes them and sends back responses.
         public void run() {
             try (
                 BufferedReader in = new BufferedReader(new InputStreamReader(socket.getInputStream()));
@@ -86,7 +84,7 @@ public class Worker {
 
                 String[] parts2 = raw.split("\\|", 2);
                 String cmd = parts2[0];
-
+                //Matches user's choice to the right handler
                 return switch (cmd) {
                     case "ADD_GAME" -> handleAddGame(parts2.length > 1 ? parts2[1] : "");
                     case "REMOVE_GAME" -> handleRemoveGame(parts2.length > 1 ? parts2[1] : "");
@@ -100,6 +98,7 @@ public class Worker {
                     default -> "ERROR|Unknown command: " + cmd;
                 };
             } catch (Exception e) {
+                e.printStackTrace();
                 return "ERROR|" + e.getMessage();
             }
         }
@@ -109,12 +108,10 @@ public class Worker {
             if (gameName.isEmpty()) {
                 return "ERROR|Missing GameName";
             }
-
             String providerName = firstNonEmpty(
                     readJsonString(json, "ProviderName"),
                     readJsonString(json, "Provider")
             );
-
             int stars = readJsonInt(json, "Stars", 0);
             int noOfVotes = readJsonInt(json, "NoOfVotes", 0);
             String gameLogo = readJsonString(json, "GameLogo");
@@ -124,7 +121,6 @@ public class Worker {
                     readJsonDoubleMaybe(json, "MinimumBet"),
                     0.0
             );
-
             double maxBet = firstNonNegative(
                     readJsonDoubleMaybe(json, "MaxBet"),
                     minBet * 10.0,
@@ -135,7 +131,6 @@ public class Worker {
                     readJsonString(json, "RiskLevel"),
                     readJsonString(json, "Risk")
             );
-
             if (riskLevel.isEmpty()) {
                 riskLevel = "low";
             }
@@ -145,6 +140,8 @@ public class Worker {
                 hashKey = readJsonString(json, "Secret");
             }
 
+            /*Updates the provider information when a game is added or modified.
+            It handles new games, provider changes, and reactivation of inactive games.*/
             GameInfo game = new GameInfo(
                     gameName,
                     providerName,
@@ -190,7 +187,6 @@ public class Worker {
             if (gameName == null || gameName.isBlank()) {
                 return "ERROR|Missing game name";
             }
-
             synchronized (games) {
                 GameInfo g = games.get(gameName);
                 if (g == null) {
@@ -199,14 +195,13 @@ public class Worker {
                 if (!g.active) {
                     return "OK|Already inactive|" + gameName;
                 }
-
+                //A game never gets deleted, it becomes inactive and game count gets redacted)
                 g.active = false;
                 providerActiveGameCount.put(
                         g.providerName,
                         Math.max(0, providerActiveGameCount.getOrDefault(g.providerName, 0) - 1)
                 );
             }
-
             return "OK|Game inactive|" + gameName;
         }
 
@@ -214,7 +209,6 @@ public class Worker {
             if (p.length < 4) {
                 return "ERROR|Usage: EDIT_GAME|gameName|field|value";
             }
-
             String gameName = p[1];
             String field = p[2];
             String value = p[3];
@@ -224,7 +218,6 @@ public class Worker {
                 if (g == null) {
                     return "ERROR|Game not found";
                 }
-
                 switch (field.toLowerCase(Locale.ROOT)) {
                     case "risk", "risklevel" -> {
                         g.riskLevel = value.toLowerCase(Locale.ROOT);
@@ -246,7 +239,6 @@ public class Worker {
                     }
                 }
             }
-
             return "OK|Game updated|" + gameName;
         }
 
@@ -254,11 +246,9 @@ public class Worker {
             if (p.length < 4) {
                 return "ERROR|Usage: SEARCH|risk|betCategory|minStars";
             }
-
             String risk = p[1];
             String bet = p[2];
             int minStars = parseStars(p[3]);
-
             List<String> results = new ArrayList<>();
 
             synchronized (games) {
@@ -272,7 +262,6 @@ public class Worker {
             if (results.isEmpty()) {
                 return "EMPTY";
             }
-
             return String.join("##", results);
         }
 
@@ -280,37 +269,36 @@ public class Worker {
             if (p.length < 3) {
                 return "ERROR|Usage: ADD_BALANCE|playerId|amount";
             }
-
             String playerId = p[1];
             double amount = Double.parseDouble(p[2]);
 
             if (amount <= 0) {
                 return "ERROR|Amount must be positive";
             }
-
             double newBalance;
             synchronized (balances) {
                 newBalance = balances.getOrDefault(playerId, 0.0) + amount;
                 balances.put(playerId, newBalance);
             }
-
             return "OK|Balance=" + format2(newBalance);
         }
-
+        /* Handles the betting process:
+             1. Validates game and player balance
+             2. Requests a random number from the SRG server
+             3. Verifies the hash for security
+             4. Calculates payout based on risk rules
+             5. Updates player balance and statistics*/
         private String handlePlay(String[] p) {
             if (p.length < 4) {
                 return "ERROR|Usage: PLAY|playerId|gameName|betAmount";
             }
-
             String playerId = p[1];
             String gameName = p[2];
             double betAmount = Double.parseDouble(p[3]);
-
             GameInfo game;
             synchronized (games) {
                 game = games.get(gameName);
             }
-
             if (game == null) {
                 return "ERROR|Game not found";
             }
@@ -337,13 +325,11 @@ public class Worker {
                 refund(playerId, betAmount);
                 return srgResponse;
             }
-
             String[] srgParts = srgResponse.split("\\|");
             if (srgParts.length < 2) {
                 refund(playerId, betAmount);
                 return "ERROR|Invalid SRG response";
             }
-
             long randomNumber;
             try {
                 randomNumber = Long.parseLong(srgParts[0].trim());
@@ -351,7 +337,6 @@ public class Worker {
                 refund(playerId, betAmount);
                 return "ERROR|Invalid SRG number";
             }
-
             String receivedHash = srgParts[1].trim();
             String expectedHash = sha256(srgParts[0].trim() + game.hashKey);
 
@@ -362,7 +347,6 @@ public class Worker {
 
             long mod100 = Math.abs(randomNumber % 100);
             long mod10 = Math.abs(randomNumber % 10);
-
             boolean jackpotWin = (mod100 == 0);
             double payout;
 
@@ -378,16 +362,10 @@ public class Worker {
                 playerTotalBets.put(playerId, playerTotalBets.getOrDefault(playerId, 0.0) + betAmount);
                 playerTotalWins.put(playerId, playerTotalWins.getOrDefault(playerId, 0.0) + payout);
             }
-
-            synchronized (providerProfits) {
-                providerProfits.put(game.providerName, providerProfits.getOrDefault(game.providerName, 0.0) + (betAmount - payout));
-            }
-
             double finalBalance;
             synchronized (balances) {
                 finalBalance = balances.getOrDefault(playerId, 0.0);
             }
-
             String resultType = jackpotWin ? "JACKPOT" : (payout > 0 ? "WIN" : "LOSE");
 
             return "OK|" + resultType
@@ -397,21 +375,18 @@ public class Worker {
                     + "|Mod100=" + mod100
                     + "|Mod10=" + mod10;
         }
-
+        //Receives user's search and sends partial results to the Reducer.
         private String handleMapSearch(String[] p) {
             if (p.length < 7) {
                 return "ERROR|Invalid MAP_SEARCH";
             }
-
             String jobId = p[1];
             String risk = p[2];
             String bet = p[3];
             int minStars = parseStars(p[4]);
             String reducerHost = p[5];
             int reducerPort = Integer.parseInt(p[6]);
-
             List<String> results = new ArrayList<>();
-
             synchronized (games) {
                 for (GameInfo g : games.values()) {
                     if (g.matchesFilter(risk, bet, minStars)) {
@@ -419,36 +394,32 @@ public class Worker {
                     }
                 }
             }
-
             String partial = results.isEmpty() ? "EMPTY" : String.join("##", results);
             sendToReducer(reducerHost, reducerPort, "PARTIAL|" + jobId + "|" + partial);
             return "OK";
         }
-
+        // Sends partial provider statistics to the Reducer for aggregation.
         private String handleMapProvider(String[] p) {
             if (p.length < 5) {
                 return "ERROR|Invalid MAP_PROVIDER";
             }
-
             String jobId = p[1];
             String providerName = p[2];
             String reducerHost = p[3];
             int reducerPort = Integer.parseInt(p[4]);
-
             int total = providerGameCount.getOrDefault(providerName, 0);
             int active = providerActiveGameCount.getOrDefault(providerName, 0);
-            double profit = providerProfits.getOrDefault(providerName, 0.0);
-            
-            String partial = "PROVIDER=" + providerName + ",TOTAL=" + total + ",ACTIVE=" + active + ",PROFIT=" + profit;
+
+            String partial = "PROVIDER=" + providerName + ",TOTAL=" + total + ",ACTIVE=" + active;
             sendToReducer(reducerHost, reducerPort, "PARTIAL|" + jobId + "|" + partial);
             return "OK";
         }
 
+        // Sends partial player statistics (bets, wins, balance) to the Reducer.
         private String handleMapPlayer(String[] p) {
             if (p.length < 5) {
                 return "ERROR|Invalid MAP_PLAYER";
             }
-
             String jobId = p[1];
             String playerId = p[2];
             String reducerHost = p[3];
@@ -462,7 +433,6 @@ public class Worker {
                     + ",BALANCE=" + format2(balance)
                     + ",TOTAL_BETS=" + format2(totalBets)
                     + ",TOTAL_WINS=" + format2(totalWins);
-
             sendToReducer(reducerHost, reducerPort, "PARTIAL|" + jobId + "|" + partial);
             return "OK";
         }
@@ -503,23 +473,22 @@ public class Worker {
             }
         }
 
+        // Returns the payout multiplier based on risk level and random index.
         private double getMultiplier(String riskLevel, int index) {
             double[] table;
-
             switch (riskLevel.toLowerCase()) {
                 case "low" -> table = new double[]{0.0, 0.0, 0.0, 0.1, 0.5, 1.0, 1.1, 1.3, 2.0, 2.5};
                 case "medium" -> table = new double[]{0.0, 0.0, 0.0, 0.0, 0.0, 0.5, 1.0, 1.5, 2.5, 3.5};
                 case "high" -> table = new double[]{0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 2.0, 6.5};
                 default -> table = new double[]{0.0, 0.0, 0.0, 0.1, 0.5, 1.0, 1.1, 1.3, 2.0, 2.5};
             }
-
             if (index < 0 || index >= table.length) {
                 return 0.0;
             }
-
             return table[index];
         }
 
+        // Converts game data into a string for transmission.
         private String formatGame(GameInfo g) {
             return "GameName=" + g.gameName
                     + ",ProviderName=" + g.providerName
@@ -548,22 +517,18 @@ public class Worker {
             if (keyPos < 0) {
                 return "";
             }
-
             int colonPos = json.indexOf(':', keyPos);
             if (colonPos < 0) {
                 return "";
             }
-
             int firstQuote = json.indexOf('"', colonPos + 1);
             if (firstQuote < 0) {
                 return "";
             }
-
             int secondQuote = json.indexOf('"', firstQuote + 1);
             if (secondQuote < 0) {
                 return "";
             }
-
             return json.substring(firstQuote + 1, secondQuote).trim();
         }
 
@@ -582,17 +547,14 @@ public class Worker {
             if (keyPos < 0) {
                 return null;
             }
-
             int colonPos = json.indexOf(':', keyPos);
             if (colonPos < 0) {
                 return null;
             }
-
             int start = colonPos + 1;
             while (start < json.length() && Character.isWhitespace(json.charAt(start))) {
                 start++;
             }
-
             int end = start;
             while (end < json.length()) {
                 char c = json.charAt(end);
@@ -602,11 +564,9 @@ public class Worker {
                     break;
                 }
             }
-
             if (end <= start) {
                 return null;
             }
-
             return Double.valueOf(json.substring(start, end));
         }
 
@@ -642,7 +602,7 @@ public class Worker {
             if (minBet >= 1.0) return "$$";
             return "$";
         }
-
+        // Computes SHA-256 hash used to verify SRG responses.
         private String sha256(String value) {
             try {
                 MessageDigest md = MessageDigest.getInstance("SHA-256");
