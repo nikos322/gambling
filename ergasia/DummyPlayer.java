@@ -9,7 +9,7 @@ import java.util.Scanner;
 public class DummyPlayer {
     private static final String DEFAULT_MASTER_HOST = "127.0.0.1";
     private static final int DEFAULT_MASTER_PORT = 5000;
-    // TODO in english pls / user should not be able to see internal messages
+
     public static void main(String[] args) {
         String masterHost = args.length >= 1 ? args[0] : DEFAULT_MASTER_HOST;
         int masterPort = args.length >= 2 ? Integer.parseInt(args[1]) : DEFAULT_MASTER_PORT;
