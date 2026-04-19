@@ -21,6 +21,7 @@ public class Worker {
     private static final Map<String, Double> playerTotalWins = Collections.synchronizedMap(new HashMap<>());
     private static final Map<String, Integer> providerGameCount = Collections.synchronizedMap(new HashMap<>());
     private static final Map<String, Integer> providerActiveGameCount = Collections.synchronizedMap(new HashMap<>());
+    private static final Map<String, Double> providerProfits = Collections.synchronizedMap(new HashMap<>());
 
     private static final String DEFAULT_SRG_HOST = "127.0.0.1";
     private static final int DEFAULT_SRG_PORT = 7000;
@@ -98,7 +99,6 @@ public class Worker {
                     default -> "ERROR|Unknown command: " + cmd;
                 };
             } catch (Exception e) {
-                e.printStackTrace();
                 return "ERROR|" + e.getMessage();
             }
         }
@@ -362,6 +362,9 @@ public class Worker {
                 playerTotalBets.put(playerId, playerTotalBets.getOrDefault(playerId, 0.0) + betAmount);
                 playerTotalWins.put(playerId, playerTotalWins.getOrDefault(playerId, 0.0) + payout);
             }
+            synchronized (providerProfits) {
+                providerProfits.put(game.providerName, providerProfits.getOrDefault(game.providerName, 0.0) + (betAmount - payout));
+            }
             double finalBalance;
             synchronized (balances) {
                 finalBalance = balances.getOrDefault(playerId, 0.0);
@@ -409,8 +412,9 @@ public class Worker {
             int reducerPort = Integer.parseInt(p[4]);
             int total = providerGameCount.getOrDefault(providerName, 0);
             int active = providerActiveGameCount.getOrDefault(providerName, 0);
-
-            String partial = "PROVIDER=" + providerName + ",TOTAL=" + total + ",ACTIVE=" + active;
+            double profit = providerProfits.getOrDefault(providerName, 0.0);
+            
+            String partial = "PROVIDER=" + providerName + ",TOTAL=" + total + ",ACTIVE=" + active + ",PROFIT=" + profit;
             sendToReducer(reducerHost, reducerPort, "PARTIAL|" + jobId + "|" + partial);
             return "OK";
         }

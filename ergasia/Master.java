@@ -80,20 +80,21 @@ public class Master {
     }
     private static void distributeJsonToWorkers(String path){
         StringBuilder toSend = new StringBuilder();
-        String gameName;
+        String gameName = null;
         int workerId = 1;
         try {
             FileReader fr = new FileReader(new File(path));
             List<String> readGames = fr.readAllLines();
             for (String line : readGames) {
                 if (line.contains("{")) {
-                    toSend.delete(0, toSend.length() - 1);
+                    toSend = new StringBuilder();
                 } else if (line.contains("GameName")) {
                     gameName = ClientHandler.parseGameName(line);
                     workerId = routeToWorker(gameName);
                 } else if (line.contains("}")) {
-                    getWorkerConnection(workerId).sendAndReceive("ADD_GAME|" + toSend.toString());
-                } else {
+                    getWorkerConnection(workerId).sendAndReceive("ADD_GAME|" + "\"GameName\"" + gameName + toSend.toString());
+                } else if (line.contains("[") || line.contains("]")) {} 
+                  else {
                     toSend.append(line.trim());
                 }
             }
