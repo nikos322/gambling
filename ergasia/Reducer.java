@@ -2,8 +2,9 @@ import java.io.*;
 import java.net.*;
 import java.util.*;
 
+//Collects partial results from workers and combines them into final aggregated results.
 public class Reducer {
-
+    // Stores active reduce jobs identified by jobId.
     private static final Map<String, ReduceJob> jobs = Collections.synchronizedMap(new HashMap<>());
 
     public static void main(String[] args) throws IOException {
@@ -11,9 +12,7 @@ public class Reducer {
             System.out.println("Usage: java Reducer <port>");
             return;
         }
-
         int port = Integer.parseInt(args[0]);
-
         ServerSocket serverSocket = new ServerSocket(port);
         System.out.println("[Reducer] Running on port " + port);
 
@@ -23,9 +22,9 @@ public class Reducer {
         }
     }
 
+    // Handles incoming messages related to MapReduce operations.
     static class Handler implements Runnable {
         private final Socket socket;
-
         Handler(Socket socket) {
             this.socket = socket;
         }
@@ -41,7 +40,6 @@ public class Reducer {
                     System.out.println(msg);
                     out.println(handle(msg));
                 }
-
             } catch (IOException e) {
                 System.err.println("[Reducer] Handler error: " + e.getMessage());
             } finally {
@@ -69,6 +67,7 @@ public class Reducer {
             };
         }
 
+        // Initializes a new reduce job with expected number of worker responses.
         private String init(String[] p) {
             if (p.length < 3) {
                 return "ERROR|Invalid INIT";
@@ -84,14 +83,13 @@ public class Reducer {
             return "OK|INIT|" + jobId;
         }
 
+        // Adds partial result from a worker to the corresponding job.
         private String addPartial(String[] p) {
             if (p.length < 3) {
                 return "ERROR|Invalid PARTIAL";
             }
-
             String jobId = p[1];
             String result = p[2];
-
             ReduceJob job;
             synchronized (jobs) {
                 job = jobs.get(jobId);
@@ -105,32 +103,29 @@ public class Reducer {
             return "OK|PARTIAL|" + jobId;
         }
 
+        // Waits for all partial results and returns the final aggregated output.
         private String getResult(String[] p) {
             if (p.length < 2) {
                 return "ERROR|Invalid GET_RESULT";
             }
-
             String jobId = p[1];
 
             ReduceJob job;
             synchronized (jobs) {
                 job = jobs.get(jobId);
             }
-
             if (job == null) {
                 return "ERROR|Unknown jobId";
             }
-
             String result = job.waitAndReduce();
-
             synchronized (jobs) {
                 jobs.remove(jobId);
             }
-
             return result;
         }
     }
 
+    //Collects and aggregates worker results.
     static class ReduceJob {
         private final String jobId;
         private final int expected;
@@ -140,12 +135,12 @@ public class Reducer {
             this.jobId = jobId;
             this.expected = expected;
         }
-
         synchronized void add(String r) {
             results.add(r);
             notifyAll();
         }
-
+        /* Waits until all workers send results, then combines
+           them into a final response depending on job type */
         synchronized String waitAndReduce() {
             while (results.size() < expected) {
                 try {
@@ -170,14 +165,13 @@ public class Reducer {
             }
 
            if (jobId.startsWith("job-prov-")) {
+            // TODO add profit
                 int totalGames = 0;
                 int activeGames = 0;
                 String provider = "";
-                float profit = 0;
 
                 for (String r : nonEmpty) {
                     String[] parts = r.split(",");
-
                     for (String part : parts) {
                         if (part.startsWith("PROVIDER=")) {
                             provider = part.split("=")[1];
@@ -185,20 +179,14 @@ public class Reducer {
                             totalGames += Integer.parseInt(part.split("=")[1]);
                         } else if (part.startsWith("ACTIVE=")) {
                             activeGames += Integer.parseInt(part.split("=")[1]);
-                        } else if (part.startsWith("PROFIT=")) {
-                            profit += Integer.parseInt(part.split("=")[1]);
                         }
                     }
                 }
-
                 return "PROVIDER_STATS|Provider=" + provider
                         + "|TotalGames=" + totalGames
-                        + "|ActiveGames=" + activeGames
-                        + "|TotalProfit=" + profit;
+                        + "|ActiveGames=" + activeGames;
                 }
-
            if (jobId.startsWith("job-player-")) {
-
                 double totalBets = 0;
                 double totalWins = 0;
                 double balance = 0;
@@ -206,7 +194,6 @@ public class Reducer {
 
                 for (String r : nonEmpty) {
                     String[] parts = r.split(",");
-
                     for (String part : parts) {
                         if (part.startsWith("PLAYER=")) {
                             player = part.split("=")[1];
@@ -221,14 +208,12 @@ public class Reducer {
                 }
 
                 double net = totalWins - totalBets;
-
                 return "PLAYER_STATS|Player=" + player
                         + "|TotalBets=" + totalBets
                         + "|TotalWins=" + totalWins
                         + "|Net=" + net
                         + "|Balance=" + balance;
             }
-
             return nonEmpty.isEmpty() ? "EMPTY" : String.join("##", nonEmpty);
         }
     }
