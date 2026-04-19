@@ -1,4 +1,6 @@
 import java.io.BufferedReader;
+import java.io.File;
+import java.io.FileReader;
 import java.io.IOException;
 import java.io.InputStreamReader;
 import java.io.PrintWriter;
@@ -50,6 +52,8 @@ public class Master {
         System.out.println("[Master] Listening on port " + MASTER_PORT);
         System.out.println("[Master] Connected to reducer at " + reducerHost + ":" + reducerPort);
         System.out.println("[Master] Connected to " + numOfWorkers + " workers.");
+        System.out.println("[Master] Importing games from Json file ");
+        distributeJsonToWorkers("game.json");
 
         while (true) {
             Socket clientSocket = serverSocket.accept();
@@ -72,6 +76,29 @@ public class Master {
             wc.connect();
             workerConnections.add(wc);
             System.out.println("[Master] Connected to worker at " + address);
+        }
+    }
+    private static void distributeJsonToWorkers(String path){
+        StringBuilder toSend = new StringBuilder();
+        String gameName;
+        int workerId = 1;
+        try {
+            FileReader fr = new FileReader(new File(path));
+            List<String> readGames = fr.readAllLines();
+            for (String line : readGames) {
+                if (line.contains("{")) {
+                    toSend.delete(0, toSend.length() - 1);
+                } else if (line.contains("GameName")) {
+                    gameName = ClientHandler.parseGameName(line);
+                    workerId = routeToWorker(gameName);
+                } else if (line.contains("}")) {
+                    getWorkerConnection(workerId).sendAndReceive("ADD_GAME|" + toSend.toString());
+                } else {
+                    toSend.append(line.trim());
+                }
+            }
+        } catch (IOException e) {
+            System.out.println("[Master] Failed loading games. Check file path or name");
         }
     }
 
@@ -339,7 +366,7 @@ class ClientHandler implements Runnable {
         }
     }
 
-    private String parseGameName(String gameJson) {
+    static String parseGameName(String gameJson) {
         if (gameJson == null) return "";
 
         String key = "\"GameName\"";
