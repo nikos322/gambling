@@ -168,7 +168,7 @@ public class Reducer {
                 int totalGames = 0;
                 int activeGames = 0;
                 String provider = "";
-                float profit = 0;
+                double profit = 0.0;
 
                 for (String r : nonEmpty) {
                     String[] parts = r.split(",");
@@ -181,7 +181,7 @@ public class Reducer {
                         } else if (part.startsWith("ACTIVE=")) {
                             activeGames += Integer.parseInt(part.split("=")[1]);
                         } else if (part.startsWith("PROFIT=")) {
-                            profit += Integer.parseInt(part.split("=")[1]);
+                            profit += Double.parseDouble(part.split("=")[1]);
                         }
                     }
                 }

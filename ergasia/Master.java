@@ -20,7 +20,6 @@ public class Master {
     private static String reducerHost;
     private static int reducerPort;
     private static int numOfWorkers;
-    //TODO after init import all games from json / make json
     // Initializes connections to workers and reducer.
     public static void main(String[] args) throws IOException {
         if (args.length < 2) {
@@ -92,7 +91,7 @@ public class Master {
                     gameName = ClientHandler.parseGameName(line);
                     workerId = routeToWorker(gameName);
                 } else if (line.contains("}")) {
-                    getWorkerConnection(workerId).sendAndReceive("ADD_GAME|" + "\"GameName\"" + gameName + toSend.toString());
+                    getWorkerConnection(workerId).sendAndReceive("ADD_GAME|{" + "\"GameName\""+ ":" +"\""+ gameName +"\","+ toSend.toString()+"}");
                 } else if (line.contains("[") || line.contains("]")) {} 
                   else {
                     toSend.append(line.trim());
@@ -268,6 +267,7 @@ class ClientHandler implements Runnable {
                     .sendAndReceive("PLAY|" + playerId + "|" + gameName + "|" + betAmount);
     }
 
+    
     // Sends balance update to all workers and returns the first successful response.
     private String handleAddBalance(String[] p) {
         if (p.length < 3) {
@@ -402,32 +402,45 @@ class WorkerConnection {
     }
 
     public void connect() {
+        try { if (socket != null && !socket.isClosed()) socket.close(); }
+        catch (IOException ignored) {}
         try {
             socket = new Socket(host, port);
-            out = new PrintWriter(socket.getOutputStream(), true);
-            in = new BufferedReader(new InputStreamReader(socket.getInputStream()));
+            out    = new PrintWriter(socket.getOutputStream(), true);
+            in     = new BufferedReader(new InputStreamReader(socket.getInputStream()));
         } catch (IOException e) {
-            System.err.println("[WorkerConnection] Cannot connect to " + host + ":" + port);
+            System.err.println("[WorkerConnection] Cannot connect to " + host + ":" + port
+                    + " — " + e.getMessage());
+            socket = null; out = null; in = null;
         }
     }
 
     // Sends a request to a worker and waits for response.
     public synchronized String sendAndReceive(String message) {
+        if (out == null || in == null) {
+            connect();
+            if (out == null) {
+                return "ERROR|Worker not reachable at " + host + ":" + port;
+            }
+        }
         try {
             out.println(message);
             String response = in.readLine();
-            return response == null ? "ERROR|Worker closed connection" : response;
+            if (response == null) {
+                connect(); // prepare for the next call
+                return "ERROR|Worker closed connection";
+            }
+            return response;
         } catch (IOException e) {
-            System.err.println("[WorkerConnection] Error: " + e.getMessage());
+            System.err.println("[WorkerConnection] I/O error with " + host + ":" + port
+                    + " — " + e.getMessage());
+            connect(); // attempt reconnect for the next call
             return "ERROR|Worker communication failure";
         }
     }
-
+ 
     public void close() {
-        try {
-            if (socket != null) socket.close();
-        } catch (IOException ignored) {
-        }
+        try { if (socket != null) socket.close(); } catch (IOException ignored) {}
     }
 }
 
@@ -445,24 +458,39 @@ class ReducerConnection {
         this.port = port;
     }
 
-    public void connect() {
+     public void connect() {
+        try { if (socket != null && !socket.isClosed()) socket.close(); }
+        catch (IOException ignored) {}
         try {
             socket = new Socket(host, port);
-            out = new PrintWriter(socket.getOutputStream(), true);
-            in = new BufferedReader(new InputStreamReader(socket.getInputStream()));
+            out    = new PrintWriter(socket.getOutputStream(), true);
+            in     = new BufferedReader(new InputStreamReader(socket.getInputStream()));
         } catch (IOException e) {
-            System.err.println("[ReducerConnection] Cannot connect to " + host + ":" + port);
+            System.err.println("[ReducerConnection] Cannot connect to " + host + ":" + port
+                    + " — " + e.getMessage());
+            socket = null; out = null; in = null;
         }
     }
-
+ 
     // Sends a request to the reducer and receives aggregated results.
     public synchronized String sendAndReceive(String message) {
+        if (out == null || in == null) {
+            connect();
+            if (out == null) {
+                return "ERROR|Reducer not reachable at " + host + ":" + port;
+            }
+        }
         try {
             out.println(message);
             String response = in.readLine();
-            return response == null ? "ERROR|Reducer closed connection" : response;
+            if (response == null) {
+                connect();
+                return "ERROR|Reducer closed connection";
+            }
+            return response;
         } catch (IOException e) {
-            System.err.println("[ReducerConnection] Error: " + e.getMessage());
+            System.err.println("[ReducerConnection] I/O error: " + e.getMessage());
+            connect();
             return "ERROR|Reducer communication failure";
         }
     }
