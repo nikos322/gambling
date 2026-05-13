@@ -1,4 +1,4 @@
-package com.example.katanem;
+package tzogos.user;
 
 import android.os.Handler;
 import android.os.Looper;

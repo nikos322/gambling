@@ -1,4 +1,4 @@
-package tzogos.user;
+package com.example.stoiximan;
 
 import android.os.Bundle;
 import android.widget.Button;
