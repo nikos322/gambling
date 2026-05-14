@@ -5,6 +5,7 @@ import android.os.Looper;
 import java.io.BufferedReader;
 import java.io.InputStreamReader;
 import java.io.PrintWriter;
+import java.net.InetSocketAddress;
 import java.net.Socket;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -12,6 +13,9 @@ import java.util.concurrent.Executors;
 public class TcpClient {
     private final String serverIp;
     private final int serverPort;
+    private Socket socket;
+    private PrintWriter out;
+    private BufferedReader in;
     private final ExecutorService executor;
     private final Handler mainHandler;
 
@@ -27,28 +31,56 @@ public class TcpClient {
         this.mainHandler = new Handler(Looper.getMainLooper());
     }
 
-    // Ασύγχρονη αποστολή μηνύματος και λήψη αποτελέσματος
+    // Μέθοδος για τη σύνδεση (τρέχει σε background thread)
+    public void connect(final Callback callback) {
+        executor.execute(() -> {
+            try {
+                // Κλείνουμε παλιά σύνδεση αν υπάρχει
+                if (socket != null) socket.close();
+
+                socket = new Socket();
+                // Timeout 5 δευτερόλεπτα για να μην περιμένει ο χρήστης για πάντα
+                socket.connect(new InetSocketAddress(serverIp, serverPort), 5000);
+
+                out = new PrintWriter(socket.getOutputStream(), true);
+                in = new BufferedReader(new InputStreamReader(socket.getInputStream()));
+
+                mainHandler.post(() -> callback.onResponse("CONNECTED"));
+            } catch (Exception e) {
+                mainHandler.post(() -> callback.onError("Failed to connect: " + e.getMessage()));
+            }
+        });
+    }
+
     public void sendRequest(final String message, final Callback callback) {
         executor.execute(() -> {
-            try (Socket socket = new Socket(serverIp, serverPort);
-                 PrintWriter out = new PrintWriter(socket.getOutputStream(), true);
-                 BufferedReader in = new BufferedReader(new InputStreamReader(socket.getInputStream()))) {
+            try {
+                if (socket == null || socket.isClosed() || out == null) {
+                    mainHandler.post(() -> callback.onError("Not connected to server"));
+                    return;
+                }
 
                 out.println(message);
                 final String response = in.readLine();
 
-                // Επιστροφή αποτελέσματος στο Main Thread
                 mainHandler.post(() -> {
                     if (response != null) {
                         callback.onResponse(response);
                     } else {
-                        callback.onError("No response from Master.");
+                        callback.onError("No response from server.");
                     }
                 });
-
             } catch (Exception e) {
-                mainHandler.post(() -> callback.onError("Connection Error: " + e.getMessage()));
+                mainHandler.post(() -> callback.onError("Communication error: " + e.getMessage()));
             }
+        });
+    }
+
+    public void disconnect() {
+        executor.execute(() -> {
+            try {
+                if (socket != null) socket.close();
+            } catch (Exception ignored) {}
         });
     }
 }

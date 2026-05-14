@@ -7,13 +7,37 @@
     <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:orientation="vertical">
+        android:orientation="vertical"
+        android:background="#F0F4F8"
+        android:padding="12dp"
+        android:layout_marginBottom="16dp">
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="System Connection"
+            android:textStyle="bold" />
 
         <EditText
             android:id="@+id/editPlayerId"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:hint="Player ID (e.g. user123)" />
+            android:hint="Enter Player ID (e.g. user01)" />
+
+        <Button
+            android:id="@+id/btnConnect"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="Connect to Master"
+            android:backgroundTint="#4CAF50" />
+
+        <TextView
+            android:id="@+id/textStatus"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="Status: Disconnected"
+            android:textColor="#FF0000"
+            android:textSize="12sp" />
 
         <TextView
             android:layout_width="match_parent"
@@ -47,6 +71,20 @@
             android:layout_height="wrap_content"
             android:text="Search Games" />
 
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="Search Results (Tap to select):"
+            android:textStyle="italic"
+            android:layout_marginTop="8dp"/>
+
+        <ListView
+            android:id="@+id/listGames"
+            android:layout_width="match_parent"
+            android:layout_height="200dp"
+            android:background="#FFFFFF"
+            android:divider="#CCCCCC"
+            android:dividerHeight="1dp" />
         <TextView
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
@@ -93,21 +131,27 @@
             android:layout_height="wrap_content"
             android:text="Add Tokens" />
 
-        <TextView
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:text="Console Output:"
-            android:textStyle="bold"
-            android:layout_marginTop="24dp"/>
+<!--        <TextView-->
+<!--            android:layout_width="match_parent"-->
+<!--            android:layout_height="wrap_content"-->
+<!--            android:text="Console Output:"-->
+<!--            android:textStyle="bold"-->
+<!--            android:layout_marginTop="24dp"/>-->
 
-        <TextView
-            android:id="@+id/textConsole"
-            android:layout_width="match_parent"
+<!--        <TextView-->
+<!--            android:id="@+id/textConsole"-->
+<!--            android:layout_width="match_parent"-->
+<!--            android:layout_height="wrap_content"-->
+<!--            android:background="#EEEEEE"-->
+<!--            android:padding="8dp"-->
+<!--            android:textSize="12sp"-->
+<!--            android:minLines="10"/>-->
+        <ProgressBar
+            android:id="@+id/progressBar"
+            style="?android:attr/progressBarStyleLarge"
+            android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:background="#EEEEEE"
-            android:padding="8dp"
-            android:textSize="12sp"
-            android:minLines="10"/>
-
+            android:layout_gravity="center"
+            android:visibility="gone" />
     </LinearLayout>
 </ScrollView>
