@@ -1,4 +1,6 @@
 import java.io.BufferedReader;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.io.File;
 import java.io.FileReader;
 import java.io.IOException;
@@ -20,10 +22,12 @@ public class Master {
     private static String reducerHost;
     private static int reducerPort;
     private static int numOfWorkers;
+    private static String srgHost;
+    private static int srgPort;
     // Initializes connections to workers and reducer.
     public static void main(String[] args) throws IOException {
-        if (args.length < 2) {
-            System.out.println("Usage: java Master <reducerHost:port> <worker1:port> <worker2:port> ...");
+        if (args.length < 3) {
+            System.out.println("Usage: java Master <reducerHost:port> <srgHost:port> <worker1:port> <worker2:port> ...");
             return;
         }
 
@@ -32,14 +36,21 @@ public class Master {
             System.out.println("ERROR: Invalid reducer address. Expected host:port");
             return;
         }
-
         reducerHost = reducerAddr[0];
         reducerPort = Integer.parseInt(reducerAddr[1]);
+
+        String[] srgAddr = args[1].split(":");
+        if (srgAddr.length != 2) {
+            System.out.println("ERROR: Invalid SRG address. Expected host:port");
+            return;
+        }
+        srgHost = srgAddr[0];
+        srgPort = Integer.parseInt(srgAddr[1]);
 
         reducerConnection = new ReducerConnection(reducerHost, reducerPort);
         reducerConnection.connect();
 
-        initWorkerConnections(Arrays.copyOfRange(args, 1, args.length));
+        initWorkerConnections(Arrays.copyOfRange(args, 2, args.length));
         numOfWorkers = workerConnections.size();
 
         if (numOfWorkers == 0) {
@@ -50,6 +61,7 @@ public class Master {
         ServerSocket serverSocket = new ServerSocket(MASTER_PORT);
         System.out.println("[Master] Listening on port " + MASTER_PORT);
         System.out.println("[Master] Connected to reducer at " + reducerHost + ":" + reducerPort);
+        System.out.println("[Master] Connected to SRG at " + srgHost + ":" + srgPort);
         System.out.println("[Master] Connected to " + numOfWorkers + " workers.");
         System.out.println("[Master] Importing games from Json file ");
         distributeJsonToWorkers("game.json");
@@ -82,8 +94,7 @@ public class Master {
         String gameName = null;
         int workerId = 1;
         try {
-            FileReader fr = new FileReader(new File(path));
-            List<String> readGames = fr.readAllLines();
+            List<String> readGames = Files.readAllLines(Path.of(path));
             for (String line : readGames) {
                 if (line.contains("{")) {
                     toSend = new StringBuilder();
@@ -91,14 +102,50 @@ public class Master {
                     gameName = ClientHandler.parseGameName(line);
                     workerId = routeToWorker(gameName);
                 } else if (line.contains("}")) {
-                    getWorkerConnection(workerId).sendAndReceive("ADD_GAME|{" + "\"GameName\""+ ":" +"\""+ gameName +"\","+ toSend.toString()+"}");
-                } else if (line.contains("[") || line.contains("]")) {} 
-                  else {
+                    String json = "{" + "\"GameName\""+ ":" +"\""+ gameName +"\","+ toSend.toString()+"}";
+                    getWorkerConnection(workerId).sendAndReceive("ADD_GAME|" + json);
+
+                    // Also register the game with the SRG (same as handleAddGame does at runtime)
+                    String hashKey = parseHashKey(toSend.toString());
+                    if (!hashKey.isEmpty() && gameName != null) {
+                        notifySRGStatic(gameName, hashKey);
+                    }
+                } else if (line.contains("[") || line.contains("]")) {}
+                else {
                     toSend.append(line.trim());
                 }
             }
         } catch (IOException e) {
             System.out.println("[Master] Failed loading games. Check file path or name");
+        }
+    }
+
+    // Extracts HashKey from a partial JSON fragment (used during startup loading).
+    private static String parseHashKey(String fragment) {
+        String key = "\"HashKey\"";
+        int keyPos = fragment.indexOf(key);
+        if (keyPos < 0) return "";
+        int colon = fragment.indexOf(':', keyPos);
+        if (colon < 0) return "";
+        int q1 = fragment.indexOf('"', colon + 1);
+        if (q1 < 0) return "";
+        int q2 = fragment.indexOf('"', q1 + 1);
+        if (q2 < 0) return "";
+        return fragment.substring(q1 + 1, q2).trim();
+    }
+
+    // Static version of notifySRG used during startup (outside ClientHandler instance).
+    private static void notifySRGStatic(String gameName, String secret) {
+        try (
+                Socket s = new Socket(srgHost, srgPort);
+                PrintWriter out = new PrintWriter(s.getOutputStream(), true);
+                BufferedReader in = new BufferedReader(new InputStreamReader(s.getInputStream()))
+        ) {
+            out.println("ADD_GAME|" + gameName + "|" + secret);
+            String resp = in.readLine();
+            System.out.println("[Master] SRG ADD_GAME (startup) response for game=" + gameName + ": " + resp);
+        } catch (IOException e) {
+            System.err.println("[Master] Failed to notify SRG for game=" + gameName + ": " + e.getMessage());
         }
     }
 
@@ -124,6 +171,8 @@ public class Master {
     public static int getNumberOfWorkers() {
         return numOfWorkers;
     }
+    public static String getSrgHost() { return srgHost; }
+    public static int getSrgPort()    { return srgPort; }
 }
 
 class ClientHandler implements Runnable {
@@ -146,8 +195,8 @@ class ClientHandler implements Runnable {
     // Reads client requests and sends back responses.
     public void run() {
         try (
-            BufferedReader in = new BufferedReader(new InputStreamReader(socket.getInputStream()));
-            PrintWriter out = new PrintWriter(socket.getOutputStream(), true)
+                BufferedReader in = new BufferedReader(new InputStreamReader(socket.getInputStream()));
+                PrintWriter out = new PrintWriter(socket.getOutputStream(), true)
         ) {
             String line;
             while ((line = in.readLine()) != null) {
@@ -195,8 +244,49 @@ class ClientHandler implements Runnable {
             return "ERROR|GameName not found in JSON";
         }
 
+        // Route game to the correct Worker
         int workerId = Master.routeToWorker(gameName);
-        return Master.getWorkerConnection(workerId).sendAndReceive("ADD_GAME|" + gameJson);
+        String workerResponse = Master.getWorkerConnection(workerId).sendAndReceive("ADD_GAME|" + gameJson);
+
+        // Extract the HashKey from the JSON and register the game with the SRG.
+        // The SRG needs gameName + secret so it can create the queue and store the key.
+        String hashKey = parseJsonString(gameJson, "HashKey");
+        if (!hashKey.isEmpty()) {
+            notifySRG(gameName, hashKey);
+        } else {
+            System.out.println("[Master] Warning: no HashKey found for game=" + gameName + ", SRG not notified.");
+        }
+
+        return workerResponse;
+    }
+
+    // Sends ADD_GAME|gameName|secret to the SRG server via a short-lived TCP connection.
+    private void notifySRG(String gameName, String secret) {
+        try (
+                Socket s = new Socket(Master.getSrgHost(), Master.getSrgPort());
+                PrintWriter out = new PrintWriter(s.getOutputStream(), true);
+                BufferedReader in = new BufferedReader(new InputStreamReader(s.getInputStream()))
+        ) {
+            out.println("ADD_GAME|" + gameName + "|" + secret);
+            String resp = in.readLine();
+            System.out.println("[Master] SRG ADD_GAME response for game=" + gameName + ": " + resp);
+        } catch (IOException e) {
+            System.err.println("[Master] Failed to notify SRG for game=" + gameName + ": " + e.getMessage());
+        }
+    }
+
+    // Parses a string value from a JSON string by key.
+    private String parseJsonString(String json, String key) {
+        String quotedKey = "\"" + key + "\"";
+        int keyPos = json.indexOf(quotedKey);
+        if (keyPos < 0) return "";
+        int colon = json.indexOf(':', keyPos);
+        if (colon < 0) return "";
+        int q1 = json.indexOf('"', colon + 1);
+        if (q1 < 0) return "";
+        int q2 = json.indexOf('"', q1 + 1);
+        if (q2 < 0) return "";
+        return json.substring(q1 + 1, q2).trim();
     }
 
     private String handleRemoveGame(String[] parts) {
@@ -264,10 +354,10 @@ class ClientHandler implements Runnable {
 
         int workerId = Master.routeToWorker(gameName);
         return Master.getWorkerConnection(workerId)
-                    .sendAndReceive("PLAY|" + playerId + "|" + gameName + "|" + betAmount);
+                .sendAndReceive("PLAY|" + playerId + "|" + gameName + "|" + betAmount);
     }
 
-    
+
     // Sends balance update to all workers and returns the first successful response.
     private String handleAddBalance(String[] p) {
         if (p.length < 3) {
@@ -438,7 +528,7 @@ class WorkerConnection {
             return "ERROR|Worker communication failure";
         }
     }
- 
+
     public void close() {
         try { if (socket != null) socket.close(); } catch (IOException ignored) {}
     }
@@ -458,7 +548,7 @@ class ReducerConnection {
         this.port = port;
     }
 
-     public void connect() {
+    public void connect() {
         try { if (socket != null && !socket.isClosed()) socket.close(); }
         catch (IOException ignored) {}
         try {
@@ -471,7 +561,7 @@ class ReducerConnection {
             socket = null; out = null; in = null;
         }
     }
- 
+
     // Sends a request to the reducer and receives aggregated results.
     public synchronized String sendAndReceive(String message) {
         if (out == null || in == null) {

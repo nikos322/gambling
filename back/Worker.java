@@ -59,8 +59,8 @@ public class Worker {
         // Listens for incoming requests, processes them and sends back responses.
         public void run() {
             try (
-                BufferedReader in = new BufferedReader(new InputStreamReader(socket.getInputStream()));
-                PrintWriter out = new PrintWriter(socket.getOutputStream(), true)
+                    BufferedReader in = new BufferedReader(new InputStreamReader(socket.getInputStream()));
+                    PrintWriter out = new PrintWriter(socket.getOutputStream(), true)
             ) {
                 String line;
                 while ((line = in.readLine()) != null) {
@@ -320,7 +320,8 @@ public class Worker {
                 balances.put(playerId, balance - betAmount);
             }
 
-            String srgResponse = requestRandomFromSRG(gameName, game.hashKey);
+            // The secret is stored in the SRG at ADD_GAME time; only the game name is needed here.
+            String srgResponse = requestRandomFromSRG(gameName);
             if (srgResponse.startsWith("ERROR")) {
                 refund(playerId, betAmount);
                 return srgResponse;
@@ -413,7 +414,7 @@ public class Worker {
             int total = providerGameCount.getOrDefault(providerName, 0);
             int active = providerActiveGameCount.getOrDefault(providerName, 0);
             double profit = providerProfits.getOrDefault(providerName, 0.0);
-            
+
             String partial = "PROVIDER=" + providerName + ",TOTAL=" + total + ",ACTIVE=" + active + ",PROFIT=" + profit;
             sendToReducer(reducerHost, reducerPort, "PARTIAL|" + jobId + "|" + partial);
             return "OK";
@@ -449,9 +450,9 @@ public class Worker {
 
         private void sendToReducer(String host, int port, String msg) {
             try (
-                Socket s = new Socket(host, port);
-                PrintWriter out = new PrintWriter(s.getOutputStream(), true);
-                BufferedReader in = new BufferedReader(new InputStreamReader(s.getInputStream()))
+                    Socket s = new Socket(host, port);
+                    PrintWriter out = new PrintWriter(s.getOutputStream(), true);
+                    BufferedReader in = new BufferedReader(new InputStreamReader(s.getInputStream()))
             ) {
                 out.println(msg);
                 in.readLine();
@@ -460,13 +461,17 @@ public class Worker {
             }
         }
 
-        private String requestRandomFromSRG(String gameName, String secret) {
+        /**
+         * Sends GET_RANDOM|gameName to the SRG.
+         * The secret is NOT included — the SRG already has it from ADD_GAME time.
+         */
+        private String requestRandomFromSRG(String gameName) {
             try (
-                Socket s = new Socket(srgHost, srgPort);
-                PrintWriter out = new PrintWriter(s.getOutputStream(), true);
-                BufferedReader in = new BufferedReader(new InputStreamReader(s.getInputStream()))
+                    Socket s = new Socket(srgHost, srgPort);
+                    PrintWriter out = new PrintWriter(s.getOutputStream(), true);
+                    BufferedReader in = new BufferedReader(new InputStreamReader(s.getInputStream()))
             ) {
-                out.println("GET_RANDOM|" + gameName + "|" + secret);
+                out.println("GET_RANDOM|" + gameName);
                 String resp = in.readLine();
                 if (resp == null) {
                     return "ERROR|No response from SRG";

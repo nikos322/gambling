@@ -1,9 +1,5 @@
-import java.io.BufferedReader;
-import java.io.IOException;
-import java.io.InputStreamReader;
-import java.io.PrintWriter;
-import java.net.ServerSocket;
-import java.net.Socket;
+import java.io.*;
+import java.net.*;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
@@ -20,7 +16,9 @@ public class SRGServer {
     // Stores one random-number buffer per game.
     private static final Map<String, GameBuffer> gameBuffers = new HashMap<>();
 
-    // Starts the SRG server. A producer is created lazily for each game when it is first played.
+    // Stores the secret (HashKey) for each registered game.
+    private static final Map<String, String> gameSecrets = new HashMap<>();
+
     public static void main(String[] args) throws IOException {
         if (args.length < 1) {
             System.out.println("Usage: java SRGServer <port>");
@@ -37,20 +35,39 @@ public class SRGServer {
         }
     }
 
-    // Returns the buffer of a game. If the game is played for the first time, it creates a new producer.
-    private static GameBuffer getOrCreateGameBuffer(String gameName) {
+    /**
+     * Registers a game: stores its secret and creates/starts its producer buffer.
+     * Called when ADD_GAME is received (sent by the Worker after a game is added).
+     */
+    static void registerGame(String gameName, String secret) {
         synchronized (gameBuffers) {
-            GameBuffer gameBuffer = gameBuffers.get(gameName);
+            // Store secret regardless (allow re-registration / update)
+            gameSecrets.put(gameName, secret);
 
-            if (gameBuffer == null) {
-                gameBuffer = new GameBuffer(gameName);
+            if (!gameBuffers.containsKey(gameName)) {
+                GameBuffer gameBuffer = new GameBuffer(gameName);
                 gameBuffers.put(gameName, gameBuffer);
-
                 new Thread(new Producer(gameBuffer)).start();
-                System.out.println("[SRG] Created producer for game=" + gameName);
+                System.out.println("[SRG] Registered game=" + gameName + " and started producer.");
+            } else {
+                System.out.println("[SRG] Updated secret for game=" + gameName);
             }
+        }
+    }
 
-            return gameBuffer;
+    /**
+     * Returns the buffer for a game that was already registered via ADD_GAME.
+     * Returns null if the game has not been registered.
+     */
+    private static GameBuffer getGameBuffer(String gameName) {
+        synchronized (gameBuffers) {
+            return gameBuffers.get(gameName);
+        }
+    }
+
+    private static String getSecret(String gameName) {
+        synchronized (gameBuffers) {
+            return gameSecrets.get(gameName);
         }
     }
 
@@ -65,7 +82,7 @@ public class SRGServer {
         }
     }
 
-    // Continuously generates random numbers and stores them in a shared buffer
+    // Continuously generates random numbers and stores them in the shared buffer.
     static class Producer implements Runnable {
         private final GameBuffer gameBuffer;
 
@@ -90,7 +107,7 @@ public class SRGServer {
                     int num = rand.nextInt(Integer.MAX_VALUE);
                     gameBuffer.buffer.add(num);
                     System.out.println("[SRG][" + gameBuffer.gameName + "] Produced: " + num);
-                    gameBuffer.lock.notifyAll(); // Notifies waiting threads that buffer state has changed.
+                    gameBuffer.lock.notifyAll();
                 }
                 try {
                     Thread.sleep(100);
@@ -102,7 +119,7 @@ public class SRGServer {
         }
     }
 
-    // Handles incoming requests from workers
+    // Handles incoming requests from workers.
     static class Handler implements Runnable {
         private final Socket socket;
 
@@ -135,25 +152,67 @@ public class SRGServer {
             if (request == null || request.isBlank()) {
                 return "ERROR|Empty request";
             }
-            String[] parts = request.split("\\|");
-            if (parts.length < 3) {
-                return "ERROR|Usage: GET_RANDOM|gameName|secret";
-            }
-            String cmd = parts[0];
-            String gameName = parts[1];
-            String secret = parts[2];
 
-            if (!"GET_RANDOM".equals(cmd)) {
-                return "ERROR|Unknown command";
+            String[] parts = request.split("\\|");
+            String cmd = parts[0];
+
+            return switch (cmd) {
+                case "ADD_GAME"   -> handleAddGame(parts);
+                case "GET_RANDOM" -> handleGetRandom(parts);
+                default           -> "ERROR|Unknown command: " + cmd;
+            };
+        }
+
+        /**
+         * ADD_GAME|gameName|secret
+         *
+         * Registers the game with its secret and starts a producer for it.
+         * Must be called by the Worker every time a new game is added.
+         */
+        private String handleAddGame(String[] parts) {
+            if (parts.length < 3) {
+                return "ERROR|Usage: ADD_GAME|gameName|secret";
             }
-            if (gameName == null || gameName.isBlank()) {
+            String gameName = parts[1].trim();
+            String secret   = parts[2].trim();
+
+            if (gameName.isEmpty()) {
                 return "ERROR|Missing game name";
             }
-            if (secret == null || secret.isBlank()) {
+            if (secret.isEmpty()) {
                 return "ERROR|Missing secret";
             }
 
-            GameBuffer gameBuffer = getOrCreateGameBuffer(gameName);
+            registerGame(gameName, secret);
+            return "OK|GAME_REGISTERED|" + gameName;
+        }
+
+        /**
+         * GET_RANDOM|gameName
+         *
+         * Returns a random number from the game's producer buffer together with
+         * sha256(number + storedSecret) so the Worker can verify integrity.
+         * The secret is NOT sent in the request — it was stored at ADD_GAME time.
+         */
+        private String handleGetRandom(String[] parts) {
+            if (parts.length < 2) {
+                return "ERROR|Usage: GET_RANDOM|gameName";
+            }
+            String gameName = parts[1].trim();
+
+            if (gameName.isEmpty()) {
+                return "ERROR|Missing game name";
+            }
+
+            GameBuffer gameBuffer = getGameBuffer(gameName);
+            if (gameBuffer == null) {
+                return "ERROR|Game not registered: " + gameName;
+            }
+
+            String secret = getSecret(gameName);
+            if (secret == null) {
+                return "ERROR|No secret for game: " + gameName;
+            }
 
             int number;
             synchronized (gameBuffer.lock) {
@@ -165,16 +224,16 @@ public class SRGServer {
                         return "ERROR|Interrupted";
                     }
                 }
-                number = gameBuffer.buffer.poll(); //Retrieves and removes a random number from the buffer
+                number = gameBuffer.buffer.poll();
                 gameBuffer.lock.notifyAll();
             }
 
-            String hash = sha256(String.valueOf(number) + secret);
+            String hash = sha256(number + secret);
             System.out.println("[SRG] Sent to game=" + gameName + " number=" + number);
-            return number + "|" + hash; //Returns random number along with hash for verification
+            return number + "|" + hash;
         }
 
-        // Computes SHA-256 hash used to verify randomness integrity
+        // Computes SHA-256 hash used to verify randomness integrity.
         private String sha256(String value) {
             try {
                 MessageDigest md = MessageDigest.getInstance("SHA-256");
