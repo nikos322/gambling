@@ -96,13 +96,13 @@ public class MainActivity extends AppCompatActivity {
         toggleLoading(true);
         textStatus.setText("Status: Connecting...");
 
-        // Dynamically instantiate the client targeting the user-selected IP and Port
+        // Initialize the TCP client to establish a targeted connection with the provided IP and Port
         tcpClient = new TcpClient(ip, port);
 
         tcpClient.connect(new TcpClient.Callback() {
             @Override
             public void onResponse(String response) {
-                // Heartbeat/sanity check request
+                // Send an initial request to verify the server is responding
                 tcpClient.sendRequest("SEARCH|*|*|*", new TcpClient.Callback() {
                     @Override
                     public void onResponse(String searchResp) {
@@ -133,7 +133,7 @@ public class MainActivity extends AppCompatActivity {
             }
         });
     }
-
+    //Enables buttons/actions when app opens and connection is established
     private void setActionsEnabled(boolean enabled) {
         btnSearch.setEnabled(enabled);
         btnPlay.setEnabled(enabled);
@@ -167,6 +167,7 @@ public class MainActivity extends AppCompatActivity {
         });
     }
 
+    //Lists the games that match the search filters
     private void updateGameList(String serverResponse) {
         displayedGameNames.clear();
 
@@ -241,7 +242,7 @@ public class MainActivity extends AppCompatActivity {
             @Override
             public void onResponse(String response) {
                 toggleLoading(false);
-                // Using a Toast here because a full popup for balance is annoying
+                //message for addbalance
                 Toast.makeText(MainActivity.this,response.contains("OK") ?
                         "Balance Updated: Total: " + response.split("\\|")[1].split("=")[1] +"$" : "Error!!Balance not Updated" , Toast.LENGTH_LONG).show();
             }
@@ -253,7 +254,6 @@ public class MainActivity extends AppCompatActivity {
             }
         });
     }
-
 
     private void toggleLoading(boolean isLoading) {
         progressBar.setVisibility(isLoading ? View.VISIBLE : View.GONE);
