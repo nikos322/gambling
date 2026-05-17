@@ -35,10 +35,7 @@ public class SRGServer {
         }
     }
 
-    /**
-     * Registers a game: stores its secret and creates/starts its producer buffer.
-     * Called when ADD_GAME is received (sent by the Worker after a game is added).
-     */
+    //Registers a game: stores its secret and starts its producer buffer.Called when ADD_GAME is received
     static void registerGame(String gameName, String secret) {
         synchronized (gameBuffers) {
             // Store secret regardless (allow re-registration / update)
@@ -55,10 +52,6 @@ public class SRGServer {
         }
     }
 
-    /**
-     * Returns the buffer for a game that was already registered via ADD_GAME.
-     * Returns null if the game has not been registered.
-     */
     private static GameBuffer getGameBuffer(String gameName) {
         synchronized (gameBuffers) {
             return gameBuffers.get(gameName);
@@ -163,12 +156,7 @@ public class SRGServer {
             };
         }
 
-        /**
-         * ADD_GAME|gameName|secret
-         *
-         * Registers the game with its secret and starts a producer for it.
-         * Must be called by the Worker every time a new game is added.
-         */
+        // Registers a game with its secret and creates its random-number buffer.
         private String handleAddGame(String[] parts) {
             if (parts.length < 3) {
                 return "ERROR|Usage: ADD_GAME|gameName|secret";
@@ -187,13 +175,7 @@ public class SRGServer {
             return "OK|GAME_REGISTERED|" + gameName;
         }
 
-        /**
-         * GET_RANDOM|gameName
-         *
-         * Returns a random number from the game's producer buffer together with
-         * sha256(number + storedSecret) so the Worker can verify integrity.
-         * The secret is NOT sent in the request — it was stored at ADD_GAME time.
-         */
+        // Returns a random number for a game together with its SHA-256 hash.
         private String handleGetRandom(String[] parts) {
             if (parts.length < 2) {
                 return "ERROR|Usage: GET_RANDOM|gameName";
