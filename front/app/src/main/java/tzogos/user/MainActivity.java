@@ -1,78 +1,72 @@
 package tzogos.user;
 
-import android.widget.ArrayAdapter;
-import android.widget.ListView;
-import java.util.ArrayList;
-import java.util.List;
 import android.os.Bundle;
 import android.view.View;
+import android.widget.ArrayAdapter;
 import android.widget.Button;
 import android.widget.EditText;
+import android.widget.ListView;
 import android.widget.ProgressBar;
 import android.widget.TextView;
 import android.widget.Toast;
 import androidx.appcompat.app.AlertDialog;
 import androidx.appcompat.app.AppCompatActivity;
+import java.util.ArrayList;
+import java.util.List;
 
 public class MainActivity extends AppCompatActivity {
 
-    private EditText editPlayerId, editRisk, editBetCategory, editStars;
-    private EditText editGameName, editBetAmount, editBalanceAmount;
-    private ProgressBar progressBar;
-    private TcpClient tcpClient;
-
-    private static final String MASTER_IP = "10.0.2.2";
-    private static final int MASTER_PORT = 5000;
-
-    // Inside MainActivity class
+    // Connection configuration fields
+    private EditText editMasterIp, editMasterPort, editPlayerId;
+    private EditText editRisk, editBetCategory, editStars, editGameName, editBetAmount, editBalanceAmount;
     private Button btnConnect, btnSearch, btnPlay, btnAddBalance;
     private TextView textStatus;
+    private ProgressBar progressBar;
+    private TcpClient tcpClient;
     private boolean isConnected = false;
     private ListView listGames;
     private ArrayAdapter<String> adapter;
     private List<String> displayedGameNames = new ArrayList<>();
 
+    // Other gameplay fields
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_main);
 
-        tcpClient = new TcpClient(MASTER_IP, MASTER_PORT);
-
-        // Bind new elements
-        btnConnect = findViewById(R.id.btnConnect);
-        btnSearch = findViewById(R.id.btnSearch);
-        btnPlay = findViewById(R.id.btnPlay);
-        btnAddBalance = findViewById(R.id.btnAddBalance);
-        textStatus = findViewById(R.id.textStatus);
-
-        // Bind existing inputs...
+        // Bind connection inputs
+        editMasterIp = findViewById(R.id.editMasterIp);
+        editMasterPort = findViewById(R.id.editMasterPort);
         editPlayerId = findViewById(R.id.editPlayerId);
+        btnConnect = findViewById(R.id.btnConnect);
+        textStatus = findViewById(R.id.textStatus);
+        progressBar = findViewById(R.id.progressBar);
+
+        // Bind gameplay inputs
         editRisk = findViewById(R.id.editRisk);
         editBetCategory = findViewById(R.id.editBetCategory);
         editStars = findViewById(R.id.editStars);
         editGameName = findViewById(R.id.editGameName);
         editBetAmount = findViewById(R.id.editBetAmount);
         editBalanceAmount = findViewById(R.id.editBalanceAmount);
-        progressBar = findViewById(R.id.progressBar);
 
-        // Set initial state: Disable everything except Connect
+        btnSearch = findViewById(R.id.btnSearch);
+        btnPlay = findViewById(R.id.btnPlay);
+        btnAddBalance = findViewById(R.id.btnAddBalance);
 
+        // Setup ListView
         listGames = findViewById(R.id.listGames);
         listGames.setNestedScrollingEnabled(true);
-        // Αρχικοποίηση του Adapter
         adapter = new ArrayAdapter<>(this, android.R.layout.simple_list_item_1, displayedGameNames);
         listGames.setAdapter(adapter);
 
-        // Τι συμβαίνει όταν ο χρήστης πατάει ένα παιχνίδι στη λίστα
         listGames.setOnItemClickListener((parent, view, position, id) -> {
             String selected = displayedGameNames.get(position);
-            // Παίρνουμε μόνο το GameName αν το string είναι σύνθετο
-            // Αν το string είναι "Roulette (Stars: 5)", καθαρίζουμε για το Play command
             String cleanName = selected.split(" \\(")[0];
             editGameName.setText(cleanName);
-            Toast.makeText(this, "Selected: " + cleanName, Toast.LENGTH_SHORT).show();
         });
+
+        // Lock interface until a successful connection happens
         setActionsEnabled(false);
 
         btnConnect.setOnClickListener(v -> handleConnect());
@@ -81,38 +75,51 @@ public class MainActivity extends AppCompatActivity {
         btnAddBalance.setOnClickListener(v -> addBalance());
     }
 
-
     private void handleConnect() {
+        String ip = editMasterIp.getText().toString().trim();
+        String portString = editMasterPort.getText().toString().trim();
         String pId = editPlayerId.getText().toString().trim();
-        if (pId.isEmpty()) {
-            showPopup("Error", "Please enter a Player ID");
+
+        if (ip.isEmpty() || portString.isEmpty() || pId.isEmpty()) {
+            showPopup("Error", "Please input IP, Port, and a valid Player ID!");
+            return;
+        }
+
+        int port;
+        try {
+            port = Integer.parseInt(portString);
+        } catch (NumberFormatException e) {
+            showPopup("Error", "Port must be a valid number.");
             return;
         }
 
         toggleLoading(true);
+        textStatus.setText("Status: Connecting...");
 
-        // Κλήση της connect που φτιάξαμε παραπάνω
+        // Dynamically instantiate the client targeting the user-selected IP and Port
+        tcpClient = new TcpClient(ip, port);
+
         tcpClient.connect(new TcpClient.Callback() {
             @Override
             public void onResponse(String response) {
-                // Αν η σύνδεση πέτυχε, στέλνουμε ένα SEARCH για να βεβαιωθούμε ότι ο Master απαντάει
+                // Heartbeat/sanity check request
                 tcpClient.sendRequest("SEARCH|*|*|*", new TcpClient.Callback() {
                     @Override
                     public void onResponse(String searchResp) {
                         toggleLoading(false);
                         isConnected = true;
                         setActionsEnabled(true);
-                        textStatus.setText("Status: Connected as " + pId);
-                        textStatus.setTextColor(android.graphics.Color.GREEN);
+                        textStatus.setText("Connected to " + ip + ":" + port + " as " + pId);
+                        textStatus.setTextColor(android.graphics.Color.parseColor("#4CAF50"));
                         btnConnect.setText("Reconnect");
-                        Toast.makeText(MainActivity.this, "Connection Established!", Toast.LENGTH_SHORT).show();
+                        Toast.makeText(MainActivity.this, "Online!", Toast.LENGTH_SHORT).show();
                     }
 
                     @Override
                     public void onError(String error) {
                         toggleLoading(false);
-                        textStatus.setText("Status: Master unreachable");
-                        showPopup("Error", "Master connected but didn't respond to search.");
+                        textStatus.setText("Status: Master Unreachable");
+                        showPopup("Error", "Socket opened, but Master node didn't respond to requests.");
                     }
                 });
             }
@@ -121,7 +128,8 @@ public class MainActivity extends AppCompatActivity {
             public void onError(String error) {
                 toggleLoading(false);
                 textStatus.setText("Status: Connection Failed");
-                showPopup("Connection Error", "Could not connect to " + MASTER_IP + "\n" + error);
+                textStatus.setTextColor(android.graphics.Color.RED);
+                showPopup("Network Error", "Could not create socket at " + ip + ":" + port + "\n" + error);
             }
         });
     }
@@ -130,7 +138,6 @@ public class MainActivity extends AppCompatActivity {
         btnSearch.setEnabled(enabled);
         btnPlay.setEnabled(enabled);
         btnAddBalance.setEnabled(enabled);
-        // Optional: Fade them out slightly if disabled
         float alpha = enabled ? 1.0f : 0.5f;
         btnSearch.setAlpha(alpha);
         btnPlay.setAlpha(alpha);
@@ -166,25 +173,25 @@ public class MainActivity extends AppCompatActivity {
         if (serverResponse == null || serverResponse.isEmpty() || serverResponse.equals("EMPTY")) {
             Toast.makeText(this, "No games found.", Toast.LENGTH_SHORT).show();
         } else {
-            // Ο Master στέλνει: GameName=X,Stars=Y##GameName=Z,Stars=W
             String[] games = serverResponse.split("##");
             for (String gameData : games) {
-                // Εξαγωγή του GameName για την εμφάνιση
-                // Παράδειγμα gameData: "GameName=Poker,Provider=Amatic,Stars=4..."
                 String name = "Unknown";
                 String stars = "0";
-
+                String min = "0";
+                String max = "1000";
                 String[] parts = gameData.split(",");
                 for(String p : parts) {
                     if(p.contains("GameName=")) name = p.split("=")[1];
                     if(p.contains("Stars=")) stars = p.split("=")[1];
+                    if(p.contains("MinBet=")) min = p.split("=")[1];
+                    if(p.contains("MaxBet=")) max = p.split("=")[1];
                 }
 
-                displayedGameNames.add(name + " (★ " + stars + ")");
+                displayedGameNames.add(name + " (★ " + stars + ")\n" + min + "/" +max);
             }
         }
 
-        adapter.notifyDataSetChanged(); // Ενημέρωση της οθόνης
+        adapter.notifyDataSetChanged();
     }
 
     private void play() {
@@ -203,8 +210,16 @@ public class MainActivity extends AppCompatActivity {
             public void onResponse(String response) {
                 toggleLoading(false);
                 // Customizing the win/loss message
-                String title = response.contains("WIN") ? "🎉 YOU WON!" : "💸 Result";
-                showPopup(title, response);
+                String title = response.contains("WIN") || response.contains("JACKPOT")? "🎉 YOU WON!" : "💸 You Lost";
+                String message = "";
+                if (response.split("\\|").length < 3) {
+                    message = "Not Enough Funds/Wrong Bet Amount";
+                    title = "Error";
+                } else {
+                    message = "Winnings: " + response.split("\\|")[2].split("=")[1] +"\nBalance: " +
+                            response.split("\\|")[3].split("=")[1];
+                }
+                showPopup(title, message);
             }
 
             @Override
@@ -227,7 +242,8 @@ public class MainActivity extends AppCompatActivity {
             public void onResponse(String response) {
                 toggleLoading(false);
                 // Using a Toast here because a full popup for balance is annoying
-                Toast.makeText(MainActivity.this, "Balance Updated: " + response, Toast.LENGTH_LONG).show();
+                Toast.makeText(MainActivity.this,response.contains("OK") ?
+                        "Balance Updated: Total: " + response.split("\\|")[1].split("=")[1] +"$" : "Error!!Balance not Updated" , Toast.LENGTH_LONG).show();
             }
 
             @Override
@@ -238,7 +254,6 @@ public class MainActivity extends AppCompatActivity {
         });
     }
 
-    // --- UI HELPER METHODS ---
 
     private void toggleLoading(boolean isLoading) {
         progressBar.setVisibility(isLoading ? View.VISIBLE : View.GONE);

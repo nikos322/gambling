@@ -16,7 +16,33 @@
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:text="System Connection"
-            android:textStyle="bold" />
+            android:textStyle="bold"
+            android:layout_marginBottom="8dp"/>
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:weightSum="3">
+
+            <EditText
+                android:id="@+id/editMasterIp"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="2"
+                android:hint="Master IP (e.g. 10.0.2.2)"
+                android:text="10.0.2.2"
+                android:inputType="text" />
+
+            <EditText
+                android:id="@+id/editMasterPort"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:hint="Port"
+                android:text="5000"
+                android:inputType="number" />
+        </LinearLayout>
 
         <EditText
             android:id="@+id/editPlayerId"
@@ -37,7 +63,8 @@
             android:layout_height="wrap_content"
             android:text="Status: Disconnected"
             android:textColor="#FF0000"
-            android:textSize="12sp" />
+            android:textSize="12sp"
+            android:layout_marginTop="4dp"/>
 
         <TextView
             android:layout_width="match_parent"
@@ -62,7 +89,6 @@
             android:id="@+id/editStars"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:inputType="number"
             android:hint="Min Stars (1-5, *)" />
 
         <Button
@@ -131,21 +157,6 @@
             android:layout_height="wrap_content"
             android:text="Add Tokens" />
 
-<!--        <TextView-->
-<!--            android:layout_width="match_parent"-->
-<!--            android:layout_height="wrap_content"-->
-<!--            android:text="Console Output:"-->
-<!--            android:textStyle="bold"-->
-<!--            android:layout_marginTop="24dp"/>-->
-
-<!--        <TextView-->
-<!--            android:id="@+id/textConsole"-->
-<!--            android:layout_width="match_parent"-->
-<!--            android:layout_height="wrap_content"-->
-<!--            android:background="#EEEEEE"-->
-<!--            android:padding="8dp"-->
-<!--            android:textSize="12sp"-->
-<!--            android:minLines="10"/>-->
         <ProgressBar
             android:id="@+id/progressBar"
             style="?android:attr/progressBarStyleLarge"

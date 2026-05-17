@@ -31,16 +31,13 @@ public class TcpClient {
         this.mainHandler = new Handler(Looper.getMainLooper());
     }
 
-    // Μέθοδος για τη σύνδεση (τρέχει σε background thread)
     public void connect(final Callback callback) {
         executor.execute(() -> {
             try {
-                // Κλείνουμε παλιά σύνδεση αν υπάρχει
                 if (socket != null) socket.close();
 
                 socket = new Socket();
-                // Timeout 5 δευτερόλεπτα για να μην περιμένει ο χρήστης για πάντα
-                socket.connect(new InetSocketAddress(serverIp, serverPort), 5000);
+                socket.connect(new InetSocketAddress(serverIp, serverPort));
 
                 out = new PrintWriter(socket.getOutputStream(), true);
                 in = new BufferedReader(new InputStreamReader(socket.getInputStream()));
